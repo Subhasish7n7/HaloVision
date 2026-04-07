@@ -1,0 +1,20 @@
+# Virtual env
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+
+# Logs
+log/
+
+# Env files
+.env
+
+*.mp4
+
+*.pt*.mp4
+*.mp4
