@@ -13,7 +13,7 @@ from App.core.contracts import (
     SceneGraph,
     SceneRelation,
     SystemEvent,
-    FrameAnalysis,   # NEW
+    FrameAnalysis,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,44 +39,41 @@ class ReasoningLayer:
         self.history_size = 5
         self.history_ttl_sec = 3.0
 
-
     # ============================================================
 
     async def handle_event(self, event: SystemEvent) -> None:
+        print("✅ ReasoningLayer RECEIVED:", event.event_type)
+
         if event.event_type != "PERCEPTION_FRAME_READY":
             return
 
         tracking_state: TrackingState = event.payload
         await self._process_frame(tracking_state)
 
-    async def _process_frame(self, tracking_state: TrackingState) -> None:
-        logger.info(
-            f"[Reasoning] Processing frame {tracking_state.frame_id} "
-            f"with {len(tracking_state.active_objects)} objects"
-        )
+    # ============================================================
 
+    async def _process_frame(self, tracking_state: TrackingState) -> None:
         self.active_objects = tracking_state.active_objects
         self._cleanup_stale_history(tracking_state.timestamp)
-        logger.info(
-            f"[Reasoning] FRAME {tracking_state.frame_id} "
-            f"| objects={len(self.active_objects)}"
-        )
 
         for obj in self.active_objects.values():
             self._update_object_history(obj)
 
-        # ✅ COLLECT threats instead of emitting
         threats = await self._evaluate_threats()
-        logger.info(f"[Reasoning] THREATS FOUND: {len(threats)}")
-
         scene_graph = self._build_scene_graph()
-        logger.info(
-            f"[Reasoning] EMIT FRAME_ANALYSIS_READY "
-            f"| frame={tracking_state.frame_id} "
-            f"| threats={len(threats)}"
-        )
 
-        # ✅ SINGLE EMIT
+        # 🔍 DEBUG
+        print("\n📊 REASONING OUTPUT")
+
+        if not threats:
+            print("No threats detected")
+
+        for t in threats:
+            print(
+                f"{t.class_name} | Level={t.threat_level} | "
+                f"Dist={t.distance_m:.2f}m | Vel={t.velocity_mps:.2f}"
+            )
+
         await self._emit_frame_analysis(
             tracking_state.frame_id,
             tracking_state.timestamp,
@@ -84,8 +81,6 @@ class ReasoningLayer:
             threats,
         )
 
-    # ============================================================
-    # HISTORY (UNCHANGED)
     # ============================================================
 
     def _update_object_history(self, obj: ObjectData) -> None:
@@ -109,66 +104,16 @@ class ReasoningLayer:
 
         for oid in to_remove:
             del self.object_history[oid]
-            logger.info(f"[Reasoning] Removed stale object {oid}")
 
     # ============================================================
 
     def _depth_to_bucket(self, depth: float) -> str:
-        if depth < 1.0:
+        if depth < 1.2:
             return "very_close"
         elif depth < 2.5:
             return "near"
         return "far"
 
-    def _compute_velocity(self, history: Deque[ObjectSnapshot]) -> float:
-        if len(history) < 3:
-            return 0.0
-
-        velocities = []
-
-        for i in range(1, len(history)):
-            h1 = history[i - 1]
-            h2 = history[i]
-
-            dt = h2.timestamp - h1.timestamp
-            if dt <= 0:
-                continue
-
-            velocities.append((h1.depth_m - h2.depth_m) / dt)
-
-        if not velocities:
-            return 0.0
-
-        # 🔧 median smoothing (prevents spikes)
-        velocities.sort()
-        mid = len(velocities) // 2
-        median = velocities[mid]
-
-        # 🔧 ignore tiny noise
-        if abs(median) < 0.05:
-            return 0.0
-
-        # 🔧 clamp extreme values
-        return max(min(median, 3.0), -3.0)
-
-    def _is_intercepting(self, history: Deque[ObjectSnapshot]) -> bool:
-        if len(history) < 3:
-            return False
-
-        h1, h2, h3 = history[-3], history[-2], history[-1]
-
-        return (
-            h1.depth_m > h2.depth_m > h3.depth_m and
-            abs(h1.horizontal_offset_norm) > abs(h2.horizontal_offset_norm) > abs(h3.horizontal_offset_norm)
-        )
-
-    def _compute_ttc(self, depth: float, velocity: float) -> Optional[float]:
-        if velocity <= 0:
-            return None
-        return depth / velocity
-
-    # ============================================================
-    # 🔥 MODIFIED: now RETURNS list
     # ============================================================
 
     async def _evaluate_threats(self) -> List[ThreatAssessment]:
@@ -177,60 +122,38 @@ class ReasoningLayer:
         for obj in self.active_objects.values():
 
             history = self.object_history.get(obj.object_id)
-            if not history or len(history) < 2:
+            if not history:
                 continue
 
-            velocity = self._compute_velocity(history)
-            intercept = self._is_intercepting(history)
+            # 🔥 USE YOUR SPEED (from perception)
+            velocity = obj.velocity_mps if obj.velocity_mps else 0.0
+
             depth_bucket = self._depth_to_bucket(obj.depth_m)
-            obj.velocity_mps = velocity
 
-            proximity_score = max(0.0, 1.0 - min(obj.depth_m / 3.0, 1.0))
-            velocity_score = min(abs(velocity) / 2.0, 1.0)
-            alignment_score = 1.0 - min(abs(obj.horizontal_offset_norm), 1.0)
-
-            risk_score = (
-                0.5 * proximity_score +
-                0.3 * velocity_score +
-                0.2 * alignment_score
-            )
-
-            if risk_score < 0.15:
-                threat_level = 0
-            elif risk_score < 0.35:
-                threat_level = 1
-            elif risk_score < 0.6:
-                threat_level = 2
-            else:
-                threat_level = 3
-
-            if depth_bucket == "very_close" and (velocity > 0.3 or intercept):
-                threat_level = 3
-            elif depth_bucket == "near" and (velocity > 0.2 or intercept):
-                threat_level = max(threat_level, 2)
-
-            if threat_level == 0:
+            # 🔥 ONLY CARE ABOUT APPROACHING OBJECTS
+            if velocity < 0.1:
                 continue
 
-            ttc = self._compute_ttc(obj.depth_m, velocity)
+            # 🔥 FORCE THREAT IF CLOSE + MOVING
+            if obj.depth_m < 2.0 and velocity > 0.15:
+                threat_level = 2
+            elif obj.depth_m < 1.2:
+                threat_level = 3
+            else:
+                threat_level = 1
 
             assessment = ThreatAssessment(
                 object_id=obj.object_id,
                 class_name=obj.class_name,
                 threat_level=threat_level,
-                reason="intercepting" if intercept else ("approaching" if velocity > 0 else "close"),
+                reason="approaching",
                 distance_m=obj.depth_m,
-                time_to_collision=ttc,
-                priority=0 if threat_level == 3 else (1 if threat_level == 2 else 2),
+                time_to_collision=(obj.depth_m / velocity) if velocity > 0 else None,
+                priority=0 if threat_level >= 2 else 1,
                 timestamp=time.time(),
                 horizontal_offset_norm=obj.horizontal_offset_norm,
                 depth_bucket=depth_bucket,
                 velocity_mps=velocity,
-            )
-
-            logger.info(
-                f"[Reasoning] THREAT -> {obj.object_id} | level={threat_level} "
-                f"| dist={depth_bucket}"
             )
 
             threats.append(assessment)
@@ -257,7 +180,6 @@ class ReasoningLayer:
         objects["USER"] = user_object
 
         for obj in self.active_objects.values():
-
             direction = (
                 "left" if obj.horizontal_offset_norm < -0.25
                 else "right" if obj.horizontal_offset_norm > 0.25
@@ -270,10 +192,10 @@ class ReasoningLayer:
         return SceneGraph(objects=objects, relations=relations, timestamp=time.time())
 
     # ============================================================
-    # 🔥 NEW EMIT
-    # ============================================================
 
     async def _emit_frame_analysis(self, frame_id, timestamp, scene_graph, threats):
+        print("🚀 Emitting FRAME_ANALYSIS_READY")
+
         await self.event_bus.publish(
             SystemEvent(
                 event_id=str(uuid.uuid4()),
