@@ -5,6 +5,7 @@ class ObjectTracker:
 
     def __init__(self, model_name="yolov8m.pt"):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        print("using cuda")
         self.model = YOLO(model_name)
 
     def track(self, frame):

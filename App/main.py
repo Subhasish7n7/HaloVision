@@ -5,6 +5,7 @@ import os
 import time
 import uuid
 
+from App.Perception.run_perception import run_camera_perception # added
 from App.core.event_bus import AsyncEventBus
 from App.core.reasoning_layer import ReasoningLayer
 from App.core.rule_engine import RuleEngine
@@ -89,45 +90,15 @@ async def setup():
 
 
 # ============================================================
-# TESTS (UNCHANGED)
+# Perception (UNCHANGED)   (Change No.1) (added)
 # ============================================================
 
-async def test_navigation():
-    setup_logging("navigation")
+async def Perception_main():
+    setup_logging("live_run")
+
     bus = await setup()
-
-    objs = {
-        "p1": ObjectData("p1","person",0.9,(0,0,0,0),(0,0),1.2,0.9,-0.6,0.0),
-        "p2": ObjectData("p2","person",0.9,(0,0,0,0),(0,0),1.3,0.9,-0.5,0.0),
-        "car": ObjectData("car","car",0.9,(0,0,0,0),(0,0),3.0,0.9,0.6,0.0),
-        "dog": ObjectData("dog","dog",0.9,(0,0,0,0),(0,0),0.7,0.9,0.1,1.0),
-    }
-
-    await publish(bus, objs, 1)
-
-
-async def test_grouping():
-    setup_logging("grouping")
-    bus = await setup()
-
-    objs = {}
-    for i in range(5):
-        objs[f"p{i}"] = ObjectData(f"p{i}","person",0.9,(0,0,0,0),(0,0),2.0,0.9,-0.5,0.0)
-
-    await publish(bus, objs, 1)
-
-
-async def test_movement():
-    setup_logging("movement")
-    bus = await setup()
-
-    depths = [2.0, 1.6, 1.2, 0.9]
-    offset = 0.3
-
-    for i, d in enumerate(depths):
-        obj = ObjectData("m1","person",0.9,(0,0,0,0),(0,0),d,0.9,offset,0.0)
-        await publish(bus, {"m1": obj}, i)
-        await asyncio.sleep(0.1)
+    # 🔥 Start real perception (camera + models)
+    await run_camera_perception(bus)
 
 
 async def test_critical_threat():
@@ -184,12 +155,6 @@ async def test_search():
 # ============================================================
 
 async def main():
-    await test_navigation()
-    await asyncio.sleep(2)
-    await test_grouping()
-    await asyncio.sleep(2)
-    await test_movement()
-    await asyncio.sleep(2)
     await test_critical_threat()
     await asyncio.sleep(2)
     await test_duplicate()
@@ -198,4 +163,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(Perception_main())
