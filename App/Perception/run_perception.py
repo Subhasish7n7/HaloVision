@@ -1,128 +1,98 @@
 import cv2
-import time
-import uuid
 import asyncio
 
-from App.core.contracts import ObjectData, TrackingState, SystemEvent
-
+from App.Perception.perception_system import PerceptionSystem
 from App.Perception.tracker import ObjectTracker
 from App.Perception.depth_estimator import MiDaSDepthEstimator
-from App.Perception.fusion import compute_object_depth
-from App.Perception.distance import DistanceEstimator
-from App.Perception.speed import SpeedEstimator
-from App.Perception.visualizer import draw_annotations
 
 
-async def run_camera_perception(bus):
+class TrackerAdapter:
+    def __init__(self):
+        self.tracker = ObjectTracker()
+        self.current_frame = None
 
-    # ================= INIT =================
-    tracker = ObjectTracker()
-    depth_model = MiDaSDepthEstimator()
-    distance_estimator = DistanceEstimator()
-    speed_estimator = SpeedEstimator()
+    def set_frame(self, frame):
+        self.current_frame = frame
+
+    def update(self, detections):
+        raw_tracks, names = self.tracker.track(self.current_frame)
+
+        adapted_tracks = []
+
+        for t in raw_tracks:
+            track_id, x1, y1, x2, y2, cls = t
+
+            adapted_tracks.append(
+                type("Track", (), {
+                    "track_id": track_id,
+                    "bbox": (int(x1), int(y1), int(x2), int(y2)),
+                    "class_name": names[cls],
+                    "confidence": 1.0
+                })
+            )
+
+        return adapted_tracks
+
+
+class DummyDetector:
+    def detect(self, frame):
+        return []
+
+
+async def process_frame(bus):
+
+    tracker = TrackerAdapter()
+
+    perception = PerceptionSystem(
+        detector=DummyDetector(),
+        tracker=tracker,
+        depth_model=MiDaSDepthEstimator(),
+    )
 
     cap = cv2.VideoCapture(0)
 
-    frame_id = 0
+    if not cap.isOpened():
+        raise Exception("Camera not accessible")
 
-    print("✅ Camera perception started...")
+    print("🚀 Perception running...")
 
-    # ================= LOOP =================
-    while True:
+    try:
+        while True:
+            ret, frame = cap.read()
 
-        ret, frame = cap.read()
-        if not ret:
-            print("❌ Camera read failed")
-            break
+            if not ret:
+                continue
 
-        frame_id += 1
-        now = time.time()
+            tracker.set_frame(frame)
 
-        # ================= TRACKING =================
-        tracks, class_names = tracker.track(frame)
+            event = perception.process_frame(frame)
 
-        # ================= DEPTH =================
-        depth_map = depth_model.predict(frame)
+            # 🔥 ===== PERCEPTION LOG =====
+            print("\n[PERCEPTION OUTPUT]")
+            for obj in event.payload.active_objects.values():
+                print(
+                    f"{obj.object_id} | {obj.class_name} | "
+                    f"depth={obj.depth_m:.2f} | offset={obj.horizontal_offset_norm:.2f}"
+                )
 
-        objects = {}
+            # 🔥 Draw on screen
+            for obj in event.payload.active_objects.values():
+                x1, y1, x2, y2 = obj.bbox
 
-        distances = {}
-        speeds = {}
+                label = f"{obj.class_name} {obj.depth_m:.2f}"
 
-        # ================= PROCESS EACH OBJECT =================
-        for track in tracks:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, label, (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-            track_id, x1, y1, x2, y2, cls = track
+            cv2.imshow("Perception", frame)
 
-            bbox = (int(x1), int(y1), int(x2), int(y2))
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
-            # ---- CENTROID ----
-            cx = int((x1 + x2) / 2)
-            cy = int((y1 + y2) / 2)
+            await bus.publish(event)
+            await asyncio.sleep(0)
 
-            # ---- DEPTH ----
-            depth_val = compute_object_depth(depth_map, bbox)
-
-            # ---- DISTANCE CATEGORY ----
-            dist_label = distance_estimator.estimate(track_id, depth_val, depth_map)
-
-            # ---- SPEED ----
-            speed = speed_estimator.estimate(track_id, depth_val if depth_val else 0.0)
-
-            # ---- STORE FOR VISUALIZATION ----
-            distances[track_id] = dist_label
-            speeds[track_id] = speed
-
-            # ---- NORMALIZED OFFSET (-1 to 1) ----
-            frame_w = frame.shape[1]
-            offset = (cx - frame_w / 2) / (frame_w / 2)
-
-            # ---- BUILD OBJECT DATA ----
-            obj = ObjectData(
-                object_id=str(track_id),
-                class_name=class_names[cls],
-                confidence=1.0,  # tracking confidence implicit
-                bbox=bbox,
-                centroid=(cx, cy),
-                depth_m=float(depth_val) if depth_val is not None else 0.0,
-                depth_confidence=1.0 if depth_val is not None else 0.0,
-                horizontal_offset_norm=float(offset),
-                velocity_mps=float(speed),
-                direction_vector=None,
-                is_stationary=abs(speed) < 0.01,
-                is_moving_towards_user=speed < 0,
-                first_seen_ts=now,
-                last_seen_ts=now,
-                frame_timestamp=now,
-            )
-
-            objects[str(track_id)] = obj
-
-        # ================= VISUALIZE =================
-        frame = draw_annotations(frame, tracks, distances, speeds, class_names)
-
-        cv2.imshow("Perception Output", frame)
-
-        if cv2.waitKey(1) & 0xFF == 27:
-            break
-
-        # ================= CREATE EVENT =================
-        tracking_state = TrackingState(
-            active_objects=objects,
-            frame_id=frame_id,
-            timestamp=now
-        )
-
-        event = SystemEvent(
-            event_id=str(uuid.uuid4()),
-            event_type="PERCEPTION_FRAME_READY",
-            payload=tracking_state,
-            priority=1,
-            timestamp=now,
-        )
-
-        # ================= PUBLISH =================
-        await bus.publish(event, await_handlers=True)
-
-    cap.release()
-    cv2.destroyAllWindows()
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()

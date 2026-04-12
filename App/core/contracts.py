@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from typing import Tuple, Optional, Dict, List
 
-
 @dataclass
 class ObjectData:
     object_id: str
@@ -11,10 +10,11 @@ class ObjectData:
     confidence: float
     bbox: Tuple[int, int, int, int]
     centroid: Tuple[int, int]
+    depth_norm: float  # 0–1 relative depth (MiDaS normalized)
     depth_m: float
     depth_confidence: float
     horizontal_offset_norm: float
-    velocity_mps: Optional[float] = None
+    velocity_norm: Optional[float] = None
     direction_vector: Optional[Tuple[float, float]] = None
     is_stationary: bool = False
     is_moving_towards_user: bool = False
@@ -36,15 +36,14 @@ class TrackingState:
 class ThreatAssessment:
     object_id: str
     class_name: str
+    depth_norm: float
+    velocity_norm: float
     threat_level: int
     reason: str
-    distance_m: float
-    time_to_collision: Optional[float]
     priority: int
     timestamp: float
     horizontal_offset_norm: float
     depth_bucket: str
-    velocity_mps: float
 
 
 
@@ -76,6 +75,7 @@ class ModeState:
     navigation_mode: bool = True
     description_mode: bool = False
     search_mode: bool = False
+    threat_mode = False
     search_target: Optional[str] = None
     muted: bool = False
     last_user_command_ts: float = 0.0

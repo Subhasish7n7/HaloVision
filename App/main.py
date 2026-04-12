@@ -5,7 +5,7 @@ import os
 import time
 import uuid
 
-from App.Perception.run_perception import run_camera_perception # added
+from App.Perception.run_perception import process_frame # added
 from App.core.event_bus import AsyncEventBus
 from App.core.reasoning_layer import ReasoningLayer
 from App.core.rule_engine import RuleEngine
@@ -75,19 +75,21 @@ async def publish(bus, objs, fid):
 
 async def setup():
     bus = AsyncEventBus()
+
     r = ReasoningLayer(bus)
     rule = RuleEngine(bus)
 
+    # 🔥 CONNECT PERCEPTION → REASONING
     await bus.subscribe("PERCEPTION_FRAME_READY", r.handle_event)
+    print("✅ Perception → Reasoning CONNECTED")
 
-    # 🔥 FIXED (THIS WAS BROKEN BEFORE)
+    # 🔥 CONNECT REASONING → RULE
     await bus.subscribe("FRAME_ANALYSIS_READY", rule.handle_event)
+    print("✅ Reasoning → RuleEngine CONNECTED")
 
     await bus.subscribe("USER_COMMAND_RECEIVED", rule.handle_event)
-    await bus.subscribe("SPEECH_INTENT_CREATED", speech_listener)
 
     return bus
-
 
 # ============================================================
 # Perception (UNCHANGED)   (Change No.1) (added)
@@ -98,7 +100,7 @@ async def Perception_main():
 
     bus = await setup()
     # 🔥 Start real perception (camera + models)
-    await run_camera_perception(bus)
+    await process_frame(bus)
 
 
 async def test_critical_threat():

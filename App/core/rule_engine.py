@@ -34,27 +34,60 @@ class RuleEngine:
         self.latest_frame_ts = 0
         self.last_nav_ts = 0.0
         self.nav_interval = 1.5
+        self.last_no_threat_ts = 0
+        self.no_threat_interval = 3.0
 
 
     # ============================================================
 
+    # async def handle_event(self, event: SystemEvent):
+    #
+    #     if event.event_type == "FRAME_ANALYSIS_READY":
+    #         await self._handle_frame(event.payload)
+    #
+    #     elif event.event_type == "USER_COMMAND_RECEIVED":
+    #         await self._handle_command(event.payload)
+    #
+    #     elif event.event_type == "MODE_CHANGED":
+    #         self.mode_state = event.payload
+
     async def handle_event(self, event: SystemEvent):
 
+        print("\n🧠 [RuleEngine] EVENT RECEIVED:", event.event_type)
+
         if event.event_type == "FRAME_ANALYSIS_READY":
-            await self._handle_frame(event.payload)
+            frame = event.payload
+
+            print(f"[RuleEngine] Frame={frame.frame_id} | threats={len(frame.threats)}")
+
+            await self._handle_frame(frame)
 
         elif event.event_type == "USER_COMMAND_RECEIVED":
+            print("[RuleEngine] Command received")
             await self._handle_command(event.payload)
 
         elif event.event_type == "MODE_CHANGED":
+            print("[RuleEngine] Mode updated")
             self.mode_state = event.payload
 
     # ============================================================
     # 🔥 NEW CORE HANDLER
     # ============================================================
-
+    print("🔥 RULE ENGINE RECEIVED FRAME")
     async def _handle_frame(self, frame: FrameAnalysis):
         logger.info(f"[Rule] FRAME {frame.frame_id} | threats={len(frame.threats)}")
+
+        print("\n========== RULE ENGINE ==========")
+
+        print(f"[RULE-IN] Frame: {frame.frame_id}")
+        print(f"[RULE-IN] Total threats: {len(frame.threats)}")
+
+        for t in frame.threats:
+            print(
+                f"[RULE-IN] {t.object_id} | {t.class_name} | "
+                f"level={t.threat_level} | depth={t.depth_bucket} | "
+                f"velocity={t.velocity_norm:.2f}"
+            )
 
         if frame.timestamp < self.latest_frame_ts:
             return
@@ -64,11 +97,25 @@ class RuleEngine:
         scene = frame.scene_graph
         threats = frame.threats
 
-        # 1️⃣ THREATS FIRST (priority)
+        # ✅ store threats for nav filtering
+        self._last_frame_threats = threats
+        print(f"Threats: {len(frame.threats)}")
+        # 1️⃣THREATS FIRST (priority)
         has_high_priority_threat = any(t.threat_level >= 2 for t in threats)
 
         for threat in threats:
             await self._handle_threat(threat)
+
+        if self.mode_state.threat_mode:
+            now = frame.timestamp
+
+            if not threats and now - self.last_no_threat_ts > self.no_threat_interval:
+                self.last_no_threat_ts = now
+
+                await self._emit(
+                    self._create_intent("threat", "No threats nearby", 1, None, 2.0)
+                )
+            return
 
         # 🚫 skip nav if threat is important
         if has_high_priority_threat:
@@ -95,14 +142,30 @@ class RuleEngine:
                 rel_map[rel.subject_id].add(rel.relation_type)
         return rel_map
 
+    def _pluralize(self, word):
+        if word == "person":
+            return "people"
+        if word.endswith(("s", "x", "z", "ch", "sh")):
+            return word + "es"
+        return word + "s"
+
     async def _handle_navigation(self, scene):
-        now = time.time()
+        now = scene.timestamp  # ✅ use frame time (NOT time.time())
+
         if now - self.last_nav_ts < self.nav_interval:
             return
 
         self.last_nav_ts = now
 
         relations = self._extract_relations(scene)
+
+        # ✅ filter out objects already handled as threats
+        threat_ids = {
+            t.object_id
+            for t in getattr(self, "_last_frame_threats", [])
+            if t.threat_level >= 2
+        }
+
         grouped = defaultdict(list)
 
         for obj in scene.objects.values():
@@ -110,10 +173,16 @@ class RuleEngine:
             if obj.object_id == "USER":
                 continue
 
-            if obj.velocity_mps and obj.velocity_mps > 0.3 and obj.depth_m < 2.5:
-                continue
+            if obj.object_id in threat_ids:
+                continue  # ✅ avoid duplicate speech
 
             if obj.confidence < 0.5:
+                continue
+
+            # ✅ improved far suppression logic
+            is_approaching = obj.velocity_norm and obj.velocity_norm > 0
+
+            if obj.depth_norm < 0.3 and not is_approaching:
                 continue
 
             rels = relations.get(obj.object_id, set())
@@ -136,15 +205,16 @@ class RuleEngine:
 
         sorted_groups = sorted(
             grouped.items(),
-            key=lambda item: min(o.depth_m for o in item[1])
+            key=lambda item: -max(o.depth_norm for o in item[1])
         )
 
         for (cls, direction, distance), objs in sorted_groups:
             count = len(objs)
-            moving = any(o.velocity_mps and o.velocity_mps > 0.1 for o in objs)
+
+            moving = any(o.velocity_norm and o.velocity_norm > 0.05 for o in objs)
 
             cls_phrase = f"{cls} approaching" if moving else cls
-            plural = cls + "s" if cls != "person" else "people"
+            plural = self._pluralize(cls)
 
             if count == 1:
                 phrases.append(f"{cls_phrase} {direction}, {distance}")
@@ -154,11 +224,9 @@ class RuleEngine:
                 phrases.append(f"several {plural} {direction}, {distance}")
 
         if phrases:
-            logger.info(f"[Rule] NAV -> {' | '.join(phrases)}")
             await self._emit(
                 self._create_intent("info", ". ".join(phrases), 2, None, 3.5)
             )
-
     async def _handle_threat(self, threat):
         if self.mode_state.search_mode and threat.threat_level < 3:
             return
@@ -198,11 +266,17 @@ class RuleEngine:
 
         is_moving = threat.reason in ["approaching", "intercepting"]
 
+        DANGEROUS_CLASSES = {"car", "bus", "truck", "motorcycle", "bicycle"}
+
+        is_dangerous = threat.class_name.lower() in DANGEROUS_CLASSES
+
+        prefix = "Warning, " if (threat.threat_level == 3 and is_dangerous) else ""
+
         if threat.threat_level == 3:
             if escalating:
-                text = f"Warning, {threat.class_name} getting very close {direction}"
+                text = f"{prefix}{threat.class_name} getting very close {direction}"
             else:
-                text = f"Warning, {threat.class_name} {'approaching' if is_moving else 'very close'} {direction}"
+                text = f"{prefix}{threat.class_name} {'approaching' if is_moving else 'very close'} {direction}"
         elif threat.threat_level == 2:
             text = f"{threat.class_name} {'approaching' if is_moving else 'near'} {direction}"
         else:
@@ -214,7 +288,7 @@ class RuleEngine:
 
     async def _handle_search(self, scene):
 
-        now = time.time()
+        now = scene.timestamp
         if now - self.last_search_ts < self.search_interval:
             return
 
@@ -281,7 +355,7 @@ class RuleEngine:
 
     def _is_duplicate(self, intent):
 
-        key = (intent.category, intent.related_object_id)
+        key = (intent.category, intent.related_object_id, intent.text)
         now = time.time()
 
         if self.last_spoken_key == key and now - self.last_spoken_ts < self.duplicate_window_sec:
@@ -311,10 +385,19 @@ class RuleEngine:
         if intent.suppress_if_duplicate and self._is_duplicate(intent):
             logger.info(f"[Rule] SUPPRESS duplicate -> {intent.text}")
             return
+
+        # 🔥 PRINT (for terminal)
+        print(
+            f"[RULE-OUT] {intent.category.upper()} | "
+            f"P{intent.priority} | {intent.text}"
+        )
+
+        # 🔥 LOG (for file)
         logger.info(
             f"[Rule] EMIT -> {intent.category.upper()} "
             f"| P{intent.priority} | {intent.text}"
         )
+
         await self.event_bus.publish(
             SystemEvent(
                 event_id=str(uuid.uuid4()),

@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 class YOLODetector:
-    def __init__(self, model_name="yolov8m.pt", conf=0.45):
+    def __init__(self, model_name="yolov8m.pt", conf=0.65):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = YOLO(model_name)
         self.conf = conf
