@@ -1,27 +1,33 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-import numpy as np
-import cv2
-import json
-import traceback
+from fastapi import FastAPI, WebSocket
+import uvicorn
 
 from ultralytics import YOLO
 
 from App.core.event_bus import AsyncEventBus
 from App.core.reasoning_layer import ReasoningLayer
 from App.core.rule_engine import RuleEngine
+from App.core.speech_scheduler import SpeechScheduler
 
 from App.Perception.perception_system import PerceptionSystem
 from App.Perception.tracker import ObjectTracker
 from App.Perception.depth_estimator import MiDaSDepthEstimator
 
-app = FastAPI()
-
-connected_clients = set()
-bus = None
+from App.api.websocket import (
+    register_client,
+    receive_frames,
+    send_audio,
+    send_detections,
+)
 
 
 # =========================
-# ✅ YOLO DETECTOR (FIXED)
+# APP
+# =========================
+app = FastAPI()
+
+
+# =========================
+# YOLO DETECTOR
 # =========================
 class YOLODetector:
     def __init__(self, model_path):
@@ -80,114 +86,55 @@ class TrackerAdapter:
 
 
 # =========================
-# INIT SYSTEMS
+# GLOBALS
 # =========================
+bus = AsyncEventBus()
+
 tracker = TrackerAdapter()
 
-# ✅ FIX: REAL DETECTOR
 detector = YOLODetector("App/yolov8m.pt")
 
 perception = PerceptionSystem(
-    detector=detector,   # 🔥 FIXED HERE
+    detector=detector,
     tracker=tracker,
     depth_model=MiDaSDepthEstimator(),
 )
 
 
 # =========================
-# EVENT SYSTEM
+# STARTUP
 # =========================
-async def forward_speech(event):
-    intent = event.payload
-
-    message = json.dumps({
-        "type": "voice",
-        "text": intent.text,
-        "priority": intent.priority,
-    })
-
-    for ws in list(connected_clients):
-        try:
-            await ws.send_text(message)
-        except:
-            connected_clients.discard(ws)
-
-
-async def setup():
-    global bus
-
-    bus = AsyncEventBus()
-
-    reasoning = ReasoningLayer(bus)
-    rule = RuleEngine(bus)
-
-    await bus.subscribe("PERCEPTION_FRAME_READY", reasoning.handle_event)
-    await bus.subscribe("FRAME_ANALYSIS_READY", rule.handle_event)
-    await bus.subscribe("USER_COMMAND_RECEIVED", rule.handle_event)
-    await bus.subscribe("SPEECH_INTENT_CREATED", forward_speech)
-
-    print("✅ FULL PIPELINE CONNECTED")
-
-
 @app.on_event("startup")
 async def startup():
-    await setup()
+    reasoning = ReasoningLayer(bus)
+    rule = RuleEngine(bus)
+    scheduler = SpeechScheduler(bus, cooldown_sec=0.1)
+
+    await bus.subscribe("PERCEPTION_FRAME_READY", reasoning.handle_event)
+    await bus.subscribe("PERCEPTION_FRAME_READY", send_detections)
+
+    await bus.subscribe("FRAME_ANALYSIS_READY", rule.handle_event)
+
+    await bus.subscribe("SPEECH_INTENT_CREATED", scheduler.handle_event)
+
+    await scheduler.start()
+
+    await bus.subscribe("SPEECH_AUDIO_READY", send_audio)
+
+    print("✅ SYSTEM READY")
 
 
 # =========================
 # WEBSOCKET
 # =========================
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    connected_clients.add(websocket)
+async def websocket_endpoint(ws: WebSocket):
+    await register_client(ws)
+    await receive_frames(ws, perception, tracker, bus)
 
-    print("✅ Client connected")
 
-    try:
-        while True:
-            # 📸 RECEIVE FRAME
-            data = await websocket.receive_bytes()
-
-            np_arr = np.frombuffer(data, np.uint8)
-            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-            if frame is None:
-                continue
-
-            # 🔥 PERCEPTION
-            tracker.set_frame(frame)
-            event = perception.process_frame(frame)
-
-            if bus:
-                await bus.publish(event, await_handlers=True)
-
-            objects = event.payload.active_objects
-            h, w = frame.shape[:2]
-
-            detections = []
-
-            for obj in objects.values():
-                x1, y1, x2, y2 = obj.bbox
-
-                detections.append({
-                    "x": x1 / w,
-                    "y": y1 / h,
-                    "width": (x2 - x1) / w,
-                    "height": (y2 - y1) / h,
-                    "label": f"{obj.class_name} {obj.depth_m:.2f}",
-                    "id": obj.object_id
-                })
-
-            # 📤 SEND RESULT
-            await websocket.send_text(json.dumps(detections))
-
-    except WebSocketDisconnect:
-        print("🔌 Client disconnected")
-
-    except Exception as e:
-        print("❌ Error:", e)
-        traceback.print_exc()
-
-    finally:
-        connected_clients.discard(websocket)
+# =========================
+# RUN
+# =========================
+if __name__ == "__main__":
+    uvicorn.run("App.main:app", host="127.0.0.1", port=8000, reload=True)

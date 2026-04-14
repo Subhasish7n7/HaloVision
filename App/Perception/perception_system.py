@@ -134,8 +134,7 @@ class PerceptionSystem:
             bbox=(x1, y1, x2, y2),
             centroid=(cx, cy),
 
-            depth_norm=float(depth_norm),  # ✅ IMPORTANT
-            depth_m=float(depth_norm),  # ✅ IMPORTANT
+            depth_norm=float(depth_norm),
             depth_confidence=float(depth_conf),
 
             horizontal_offset_norm=horizontal_offset,

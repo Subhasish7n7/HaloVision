@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Tuple, Optional, Dict, List
 
+
 @dataclass
 class ObjectData:
     object_id: str
@@ -11,7 +12,6 @@ class ObjectData:
     bbox: Tuple[int, int, int, int]
     centroid: Tuple[int, int]
     depth_norm: float  # 0–1 relative depth (MiDaS normalized)
-    depth_m: float
     depth_confidence: float
     horizontal_offset_norm: float
     velocity_norm: Optional[float] = None
@@ -75,7 +75,7 @@ class ModeState:
     navigation_mode: bool = True
     description_mode: bool = False
     search_mode: bool = False
-    threat_mode = False
+    threat_mode: bool = False
     search_target: Optional[str] = None
     muted: bool = False
     last_user_command_ts: float = 0.0
@@ -92,11 +92,20 @@ class SpeechIntent:
     expires_ts: float
     suppress_if_duplicate: bool = True
 
+@dataclass
+class SpeechAudio:
+    audio_base64: str
+    text: str
+    category: str
+    priority: int
+    timestamp: float
+    interrupt_current: bool = False
+
 
 @dataclass
 class SystemEvent:
     event_id: str
     event_type: str
-    payload: object
+    payload: any
     priority: int
     timestamp: float
