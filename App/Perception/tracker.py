@@ -3,7 +3,7 @@ import torch
 
 class ObjectTracker:
 
-    def __init__(self, model_name="yolov8m.pt"):
+    def __init__(self, model_name="yolov8n.pt"):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = YOLO(model_name)
 
@@ -14,7 +14,7 @@ class ObjectTracker:
             persist=True,
             tracker="bytetrack.yaml",
             device=self.device,
-            conf=0.25,
+            conf=0.45,
             verbose=False   
         )[0]
 

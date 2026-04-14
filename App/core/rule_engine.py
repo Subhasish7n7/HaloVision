@@ -1,5 +1,3 @@
-# core/rule_engine.py
-
 import time
 import uuid
 from typing import Dict
@@ -8,7 +6,7 @@ import logging
 
 from App.core.contracts import (
     SystemEvent,
-    FrameAnalysis,   # NEW
+    FrameAnalysis,  # NEW
     SpeechIntent,
     ModeState,
 )
@@ -36,7 +34,6 @@ class RuleEngine:
         self.nav_interval = 1.5
         self.last_no_threat_ts = 0
         self.no_threat_interval = 3.0
-
 
     # ============================================================
 
@@ -73,7 +70,6 @@ class RuleEngine:
     # ============================================================
     # 🔥 NEW CORE HANDLER
     # ============================================================
-    print("🔥 RULE ENGINE RECEIVED FRAME")
     async def _handle_frame(self, frame: FrameAnalysis):
         logger.info(f"[Rule] FRAME {frame.frame_id} | threats={len(frame.threats)}")
 
@@ -201,7 +197,6 @@ class RuleEngine:
             else:
                 distance = "far away"
 
-
             grouped[(obj.class_name, direction, distance)].append(obj)
 
         phrases = []
@@ -230,6 +225,7 @@ class RuleEngine:
             await self._emit(
                 self._create_intent("info", ". ".join(phrases), 2, None, 3.5)
             )
+
     async def _handle_threat(self, threat):
         if self.mode_state.search_mode and threat.threat_level < 3:
             return
@@ -400,7 +396,7 @@ class RuleEngine:
             f"[Rule] EMIT -> {intent.category.upper()} "
             f"| P{intent.priority} | {intent.text}"
         )
-        
+
         await self.event_bus.publish(
             SystemEvent(
                 event_id=str(uuid.uuid4()),
@@ -410,3 +406,4 @@ class RuleEngine:
                 timestamp=time.time(),
             )
         )
+

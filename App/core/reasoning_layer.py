@@ -14,8 +14,7 @@ from App.core.contracts import (
     FrameAnalysis,
 )
 
-logger = logging.getLogger()
-
+logger = logging.getLogger(__name__)
 
 class ObjectSnapshot:
     __slots__ = ("depth_norm", "horizontal_offset_norm", "timestamp")
@@ -38,7 +37,7 @@ class ReasoningLayer:
 
     # ================= ENTRY =================
 
-    async def handle_event(self, event: SystemEvent):
+    async def handle_event(self, event: SystemEvent) -> None:
         if event.event_type != "PERCEPTION_FRAME_READY":
             return
 
@@ -61,6 +60,10 @@ class ReasoningLayer:
                 f"depth={obj.depth_norm:.2f} | offset={obj.horizontal_offset_norm:.2f}")
 
         self.active_objects = tracking_state.active_objects
+        logger.info(
+            f"[Reasoning] FRAME {tracking_state.frame_id} "
+            f"| objects={len(self.active_objects)}"
+        )
 
         self._cleanup_stale_history(tracking_state.timestamp)
 
@@ -126,8 +129,17 @@ class ReasoningLayer:
         if not velocities:
             return 0.0
 
+        # median smoothing
         velocities.sort()
-        return velocities[len(velocities) // 2]
+        mid = len(velocities) // 2
+        median = velocities[mid]
+
+        # ignore noise
+        if abs(median) < 0.01:
+            return 0.0
+
+        # clamp extremes
+        return max(min(median, 3.0), -3.0)
 
     def _compute_depth_thresholds(self):
         return 0.6, 0.3
@@ -179,11 +191,15 @@ class ReasoningLayer:
             )
 
             # risk logic
-            proximity = obj.depth_norm
+            proximity_score = max(0.0, min(obj.depth_norm, 1.0))
             velocity_score = min(abs(velocity) / 0.3, 1.0)
-            alignment = 1.0 - min(abs(obj.horizontal_offset_norm), 1.0)
+            alignment_score = 1.0 - min(abs(obj.horizontal_offset_norm), 1.0)
 
-            risk = 0.5 * proximity + 0.3 * velocity_score + 0.2 * alignment
+            risk = (
+                    0.5 * proximity_score +
+                    0.3 * velocity_score +
+                    0.2 * alignment_score
+            )
 
             if risk < 0.15:
                 level = 0
@@ -197,6 +213,9 @@ class ReasoningLayer:
             if depth_bucket == "very_close" and (velocity > 0.05 or intercept):
                 level = 3
 
+            elif depth_bucket == "near" and (velocity > 0.03 or intercept):
+                level = max(level, 2)
+
             if level == 0:
                 continue
 
@@ -206,8 +225,8 @@ class ReasoningLayer:
                 depth_norm=obj.depth_norm,
                 velocity_norm=velocity,
                 threat_level=level,
-                reason="intercepting" if intercept else "approaching",
-                priority=0 if level == 3 else 1,
+                reason="intercepting" if intercept else ("approaching" if velocity > 0 else "close"),
+                priority=0 if level == 3 else (1 if level == 2 else 2),
                 timestamp=time.time(),
                 horizontal_offset_norm=obj.horizontal_offset_norm,
                 depth_bucket=depth_bucket,
@@ -225,8 +244,43 @@ class ReasoningLayer:
 
     # ================= SCENE =================
 
-    def _build_scene_graph(self):
-        return SceneGraph(objects=self.active_objects, relations=[], timestamp=time.time())
+    def _build_scene_graph(self) -> SceneGraph:
+        relations = []
+
+        user_object = ObjectData(
+            object_id="USER",
+            class_name="user",
+            confidence=1.0,
+            bbox=(0, 0, 0, 0),
+            centroid=(0, 0),
+            depth_norm=1.0,
+            depth_confidence=1.0,
+            horizontal_offset_norm=0.0,
+        )
+
+        objects = dict(self.active_objects)
+        objects["USER"] = user_object
+
+        near_th, far_th = self._compute_depth_thresholds()
+
+        for obj in self.active_objects.values():
+            direction = (
+                "left" if obj.horizontal_offset_norm < -0.25
+                else "right" if obj.horizontal_offset_norm > 0.25
+                else "ahead"
+            )
+
+            relations.append(SceneRelation(obj.object_id, direction, "USER", 0.9))
+            relations.append(
+                SceneRelation(
+                    obj.object_id,
+                    self._depth_to_bucket(obj.depth_norm, near_th, far_th),
+                    "USER",
+                    0.8
+                )
+            )
+
+        return SceneGraph(objects=objects, relations=relations, timestamp=time.time())
 
     # ================= EMIT =================
 
