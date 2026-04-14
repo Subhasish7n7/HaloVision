@@ -1,168 +1,193 @@
-# core/main.py
-import asyncio
-import logging
-import os
-import time
-import uuid
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import numpy as np
+import cv2
+import json
+import traceback
 
-from App.Perception.run_perception import process_frame # added
+from ultralytics import YOLO
+
 from App.core.event_bus import AsyncEventBus
 from App.core.reasoning_layer import ReasoningLayer
 from App.core.rule_engine import RuleEngine
-from App.core.contracts import ObjectData, TrackingState, SystemEvent
+
+from App.Perception.perception_system import PerceptionSystem
+from App.Perception.tracker import ObjectTracker
+from App.Perception.depth_estimator import MiDaSDepthEstimator
+
+app = FastAPI()
+
+connected_clients = set()
+bus = None
 
 
-# ============================================================
-# LOGGING
-# ============================================================
+# =========================
+# ✅ YOLO DETECTOR (FIXED)
+# =========================
+class YOLODetector:
+    def __init__(self, model_path):
+        self.model = YOLO(model_path)
 
-def setup_logging(name):
-    os.makedirs("log/reasoning_log", exist_ok=True)
-    os.makedirs("log/rule_log", exist_ok=True)
+    def detect(self, frame):
+        results = self.model(frame)[0]
 
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
+        detections = []
 
-    for h in root.handlers[:]:
-        root.removeHandler(h)
+        for box in results.boxes:
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            cls = int(box.cls[0])
+            conf = float(box.conf[0])
 
-    r = logging.FileHandler(f"log/reasoning_log/{name}.txt", "w")
-    r.setFormatter(logging.Formatter("%(asctime)s | %(message)s"))
-    r.addFilter(lambda rec: "[Reasoning]" in rec.getMessage())
+            detections.append(
+                type("Det", (), {
+                    "bbox": (int(x1), int(y1), int(x2), int(y2)),
+                    "class_name": self.model.names[cls],
+                    "confidence": conf
+                })
+            )
 
-    rule = logging.FileHandler(f"log/rule_log/{name}.txt", "w")
-    rule.setFormatter(logging.Formatter("%(asctime)s | %(message)s"))
-    rule.addFilter(lambda rec: "[Rule]" in rec.getMessage())
-
-    root.addHandler(r)
-    root.addHandler(rule)
-
-
-# ============================================================
-# LISTENERS
-# ============================================================
-
-async def speech_listener(event):
-    i = event.payload
-    logging.info(f"[Rule] DECISION -> {i.category.upper()} | P{i.priority} | {i.text}")
+        return detections
 
 
-# ============================================================
-# FRAME PUBLISHER
-# ============================================================
+# =========================
+# TRACKER
+# =========================
+class TrackerAdapter:
+    def __init__(self):
+        self.tracker = ObjectTracker()
+        self.current_frame = None
 
-async def publish(bus, objs, fid):
-    logging.info(f"[Reasoning] FRAME {fid}")
+    def set_frame(self, frame):
+        self.current_frame = frame
 
-    now = time.time()
-    for o in objs.values():
-        o.frame_timestamp = now
+    def update(self, detections):
+        raw_tracks, names = self.tracker.track(self.current_frame)
 
-    event = SystemEvent(
-        event_id=str(uuid.uuid4()),
-        event_type="PERCEPTION_FRAME_READY",
-        payload=TrackingState(objs, fid, now),
-        priority=1,
-        timestamp=now,
-    )
+        adapted = []
 
-    await bus.publish(event, await_handlers=True)
+        for t in raw_tracks:
+            track_id, x1, y1, x2, y2, cls = t
+
+            adapted.append(
+                type("Track", (), {
+                    "track_id": track_id,
+                    "bbox": (int(x1), int(y1), int(x2), int(y2)),
+                    "class_name": names[cls],
+                    "confidence": 1.0
+                })
+            )
+
+        return adapted
 
 
-# ============================================================
-# SETUP
-# ============================================================
+# =========================
+# INIT SYSTEMS
+# =========================
+tracker = TrackerAdapter()
+
+# ✅ FIX: REAL DETECTOR
+detector = YOLODetector("App/yolov8m.pt")
+
+perception = PerceptionSystem(
+    detector=detector,   # 🔥 FIXED HERE
+    tracker=tracker,
+    depth_model=MiDaSDepthEstimator(),
+)
+
+
+# =========================
+# EVENT SYSTEM
+# =========================
+async def forward_speech(event):
+    intent = event.payload
+
+    message = json.dumps({
+        "type": "voice",
+        "text": intent.text,
+        "priority": intent.priority,
+    })
+
+    for ws in list(connected_clients):
+        try:
+            await ws.send_text(message)
+        except:
+            connected_clients.discard(ws)
+
 
 async def setup():
+    global bus
+
     bus = AsyncEventBus()
 
-    r = ReasoningLayer(bus)
+    reasoning = ReasoningLayer(bus)
     rule = RuleEngine(bus)
 
-    # 🔥 CONNECT PERCEPTION → REASONING
-    await bus.subscribe("PERCEPTION_FRAME_READY", r.handle_event)
-    print("✅ Perception → Reasoning CONNECTED")
-
-    # 🔥 CONNECT REASONING → RULE
+    await bus.subscribe("PERCEPTION_FRAME_READY", reasoning.handle_event)
     await bus.subscribe("FRAME_ANALYSIS_READY", rule.handle_event)
-    print("✅ Reasoning → RuleEngine CONNECTED")
-
     await bus.subscribe("USER_COMMAND_RECEIVED", rule.handle_event)
+    await bus.subscribe("SPEECH_INTENT_CREATED", forward_speech)
 
-    return bus
-
-# ============================================================
-# Perception (UNCHANGED)   (Change No.1) (added)
-# ============================================================
-
-async def Perception_main():
-    setup_logging("live_run")
-
-    bus = await setup()
-    # 🔥 Start real perception (camera + models)
-    await process_frame(bus)
+    print("✅ FULL PIPELINE CONNECTED")
 
 
-async def test_critical_threat():
-    setup_logging("critical_threat")
-    bus = await setup()
-
-    depths = [3.0, 2.2, 1.4, 0.9, 0.5]
-    offsets = [0.6, 0.4, 0.2, 0.1, 0.0]
-
-    for i in range(5):
-        obj = ObjectData("bike","bicycle",0.9,(0,0,0,0),(0,0),
-                         depths[i],0.9,offsets[i],2.0)
-        await publish(bus, {"bike": obj}, i)
+@app.on_event("startup")
+async def startup():
+    await setup()
 
 
-async def test_duplicate():
-    setup_logging("duplicate")
-    bus = await setup()
+# =========================
+# WEBSOCKET
+# =========================
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    connected_clients.add(websocket)
 
-    obj1 = ObjectData("p","person",0.9,(0,0,0,0),(0,0),2.0,0.9,0.0,0.0)
-    obj2 = ObjectData("p","person",0.9,(0,0,0,0),(0,0),1.2,0.9,0.0,0.0)
+    print("✅ Client connected")
 
-    logging.info("[Rule] EXPECT -> first emit")
-    await publish(bus, {"p": obj1}, 1)
+    try:
+        while True:
+            # 📸 RECEIVE FRAME
+            data = await websocket.receive_bytes()
 
-    logging.info("[Rule] EXPECT -> suppressed duplicate")
-    await publish(bus, {"p": obj1}, 2)
+            np_arr = np.frombuffer(data, np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-    logging.info("[Rule] EXPECT -> new emit after change")
-    await publish(bus, {"p": obj2}, 3)
+            if frame is None:
+                continue
 
+            # 🔥 PERCEPTION
+            tracker.set_frame(frame)
+            event = perception.process_frame(frame)
 
-async def test_search():
-    setup_logging("search")
-    bus = await setup()
+            if bus:
+                await bus.publish(event, await_handlers=True)
 
-    await bus.publish(SystemEvent(
-        event_id="cmd",
-        event_type="USER_COMMAND_RECEIVED",
-        payload={"text": "search chair"},
-        priority=1,
-        timestamp=time.time()
-    ), await_handlers=True)
+            objects = event.payload.active_objects
+            h, w = frame.shape[:2]
 
-    obj = ObjectData("c","chair",0.9,(0,0,0,0),(0,0),1.2,0.9,0.5,0.0)
+            detections = []
 
-    for i in range(3):
-        await publish(bus, {"c": obj}, i)
-        await asyncio.sleep(0.3)
+            for obj in objects.values():
+                x1, y1, x2, y2 = obj.bbox
 
+                detections.append({
+                    "x": x1 / w,
+                    "y": y1 / h,
+                    "width": (x2 - x1) / w,
+                    "height": (y2 - y1) / h,
+                    "label": f"{obj.class_name} {obj.depth_m:.2f}",
+                    "id": obj.object_id
+                })
 
-# ============================================================
-# MAIN
-# ============================================================
+            # 📤 SEND RESULT
+            await websocket.send_text(json.dumps(detections))
 
-async def main():
-    await test_critical_threat()
-    await asyncio.sleep(2)
-    await test_duplicate()
-    await asyncio.sleep(2)
-    await test_search()
+    except WebSocketDisconnect:
+        print("🔌 Client disconnected")
 
+    except Exception as e:
+        print("❌ Error:", e)
+        traceback.print_exc()
 
-if __name__ == "__main__":
-    asyncio.run(Perception_main())
+    finally:
+        connected_clients.discard(websocket)

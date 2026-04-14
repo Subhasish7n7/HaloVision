@@ -4,7 +4,7 @@ from typing import Dict
 
 import numpy as np
 
-from core.contracts import (
+from App.core.contracts import (
     ObjectData,
     TrackingState,
     SystemEvent,

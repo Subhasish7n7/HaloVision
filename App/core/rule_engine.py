@@ -397,7 +397,7 @@ class RuleEngine:
             f"[Rule] EMIT -> {intent.category.upper()} "
             f"| P{intent.priority} | {intent.text}"
         )
-
+        
         await self.event_bus.publish(
             SystemEvent(
                 event_id=str(uuid.uuid4()),
