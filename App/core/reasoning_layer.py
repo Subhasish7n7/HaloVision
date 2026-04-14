@@ -57,6 +57,8 @@ class ReasoningLayer:
                 f"[Reasoning][IN] {obj.object_id} | {obj.class_name} | "
                 f"depth={obj.depth_norm:.2f} | offset={obj.horizontal_offset_norm:.2f}"
             )
+            print(f"[Reasoning][IN] {obj.object_id} | {obj.class_name} | "
+                f"depth={obj.depth_norm:.2f} | offset={obj.horizontal_offset_norm:.2f}")
 
         self.active_objects = tracking_state.active_objects
 
@@ -128,20 +130,12 @@ class ReasoningLayer:
         return velocities[len(velocities) // 2]
 
     def _compute_depth_thresholds(self):
-        values = [obj.depth_norm for obj in self.active_objects.values()]
-
-        if len(values) < 3:
-            return 0.7, 0.3
-
-        values = sorted(values)
-        n = len(values)
-
-        return values[int(0.7 * n)], values[int(0.3 * n)]
+        return 0.6, 0.3
 
     def _depth_to_bucket(self, depth, near_th, far_th):
-        if depth >= near_th:
+        if depth >= 0.6:
             return "very_close"
-        elif depth >= far_th:
+        elif depth >= 0.35:
             return "near"
         return "far"
 
@@ -162,6 +156,7 @@ class ReasoningLayer:
 
         threats = []
         near_th, far_th = self._compute_depth_thresholds()
+        print(f"thresholds near = {near_th:.3f} far = {far_th:.3f}")
 
         for obj in self.active_objects.values():
 
@@ -173,6 +168,7 @@ class ReasoningLayer:
             velocity = self._compute_velocity(history)
             intercept = self._is_intercepting(history)
             depth_bucket = self._depth_to_bucket(obj.depth_norm, near_th, far_th)
+            print(f"bucket {obj.object_id} depth = {obj.depth_norm:.3f} | {depth_bucket}")
 
             obj.velocity_norm = velocity
 

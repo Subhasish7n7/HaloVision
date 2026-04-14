@@ -1,0 +1,160 @@
+/* GLOBAL */
+body {
+  margin: 0;
+  background: black;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+/* MENU */
+.menu-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  font-size: 36px;
+  margin-bottom: 30px;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 25px;
+  width: 500px;
+}
+
+/* BUTTON */
+.card {
+  padding: 25px;
+  border: 1px solid cyan;
+  border-radius: 20px;
+  background: #111;
+  color: cyan;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.card:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 15px cyan, 0 0 30px rgba(0,255,255,0.3);
+}
+
+.card:active {
+  transform: scale(0.98);
+}
+
+.full {
+  grid-column: span 2;
+}
+
+/* HUD */
+.hud {
+  display: flex;
+  height: 100vh;
+}
+
+/* SIDEBAR */
+.sidebar {
+  width: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding-top: 20px;
+  border-right: 1px solid rgba(0,255,255,0.2);
+}
+
+.vision-btn {
+  width: 120px;
+  height: 120px;
+  background: #020617;
+  border: 2px solid cyan;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.vision-btn:hover {
+  box-shadow: 0 0 20px cyan;
+  transform: scale(1.05);
+}
+
+.vision-btn.active {
+  border-color: magenta;
+  box-shadow: 0 0 20px magenta;
+}
+
+.icon {
+  font-size: 30px;
+  color: cyan;
+}
+
+.label {
+  margin-top: 10px;
+  color: cyan;
+}
+
+/* CENTER */
+.center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.camera-box {
+  width: 75%;
+  height: 85%;
+}
+
+/* CAMERA */
+.camera-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 15px;
+  overflow: hidden;
+  box-shadow: 0 0 25px cyan;
+}
+
+.camera-inner video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.box {
+  position: absolute;
+  border: 2px solid cyan;
+  color: cyan;
+  font-size: 12px;
+  padding: 2px;
+  font-weight: bold;
+  pointer-events: none;
+}
+
+/* PANEL */
+.panel {
+  width: 280px;
+  padding: 20px;
+  border-left: 1px solid rgba(0,255,255,0.2);
+}
+
+/* ANIMATION */
+.fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

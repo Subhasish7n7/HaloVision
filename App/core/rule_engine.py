@@ -184,6 +184,7 @@ class RuleEngine:
 
             if obj.depth_norm < 0.3 and not is_approaching:
                 continue
+            print(f"id = {obj.object_id} | depth norm = {obj.depth_norm:.3f}")
 
             rels = relations.get(obj.object_id, set())
 
@@ -193,11 +194,13 @@ class RuleEngine:
                 else "ahead"
             )
 
-            distance = (
-                "very close" if "very_close" in rels
-                else "near you" if "near" in rels
-                else "far away"
-            )
+            if obj.depth_norm >= 0.6:
+                distance = "very close"
+            elif obj.depth_norm >= 0.35:
+                distance = "near you"
+            else:
+                distance = "far away"
+
 
             grouped[(obj.class_name, direction, distance)].append(obj)
 

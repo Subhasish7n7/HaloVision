@@ -13,3 +13,10 @@ log/
 
 # Env files
 .env
+
+#images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pt

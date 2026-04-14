@@ -110,15 +110,19 @@ async def startup():
     rule = RuleEngine(bus)
     scheduler = SpeechScheduler(bus, cooldown_sec=0.1)
 
+    # Perception → reasoning + frontend
     await bus.subscribe("PERCEPTION_FRAME_READY", reasoning.handle_event)
     await bus.subscribe("PERCEPTION_FRAME_READY", send_detections)
 
+    # Reasoning → rule engine
     await bus.subscribe("FRAME_ANALYSIS_READY", rule.handle_event)
 
-    await bus.subscribe("SPEECH_INTENT_CREATED", scheduler.handle_event)
+    # 🚫 DO NOT manually subscribe scheduler here
+    # scheduler.start() already does it internally
 
     await scheduler.start()
 
+    # Speech → frontend
     await bus.subscribe("SPEECH_AUDIO_READY", send_audio)
 
     print("✅ SYSTEM READY")

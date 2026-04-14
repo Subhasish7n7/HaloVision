@@ -48,7 +48,7 @@ async def send_detections(event: SystemEvent):
         detections.append({
             "id": obj.object_id,
             "label": obj.class_name,
-            "depth": obj.obj.depth_norm,
+            "depth": obj.depth_norm,
             "bbox": [x1, y1, x2, y2]
         })
 
