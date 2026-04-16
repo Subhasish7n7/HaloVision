@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, WebSocket
 import uvicorn
 
@@ -11,6 +12,16 @@ from App.core.speech_scheduler import SpeechScheduler
 from App.Perception.perception_system import PerceptionSystem
 from App.Perception.tracker import ObjectTracker
 from App.Perception.depth_estimator import MiDaSDepthEstimator
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
+    ]
+)
 
 from App.api.websocket import (
     register_client,
@@ -65,8 +76,8 @@ class TrackerAdapter:
     def set_frame(self, frame):
         self.current_frame = frame
 
-    def update(self, detections):
-        raw_tracks, names = self.tracker.track(self.current_frame)
+    def update(self, frame):
+        raw_tracks, names = self.tracker.track(frame)
 
         adapted = []
 

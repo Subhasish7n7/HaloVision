@@ -1,9 +1,12 @@
+# perception/perception_system.py
 import time
 import uuid
 from typing import Dict
 import torch
 from ultralytics import YOLO
 import numpy as np
+import logging
+logger = logging.getLogger(__name__)
 
 from App.core.contracts import (
     ObjectData,
@@ -14,11 +17,6 @@ from App.core.contracts import (
 
 class PerceptionSystem:
 
-    def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = YOLO("yolov8n.pt")
-        self.model.to(self.device)
-        self.model.fuse()  # speed boost
     def __init__(self, detector, tracker, depth_model):
         """
         detector: YOLO-like model → returns detections
@@ -33,24 +31,38 @@ class PerceptionSystem:
 
         # Track lifecycle memory
         self.first_seen: Dict[str, float] = {}
+        self.last_depth = None
 
     # -----------------------------
     # Main entry point
     # -----------------------------
     def process_frame(self, frame: np.ndarray) -> SystemEvent:
+        start_total = time.time()
         timestamp = time.time()
         self.frame_id += 1
 
         h, w = frame.shape[:2]
 
-        # 1. Detect
-        detections = self.detector.detect(frame)
-
-        # 2. Track
-        tracks = self.tracker.update(detections)
+        t1 = time.time()
+        tracks = self.tracker.update(frame)
+        logger.debug(f"[PERF] tracking={(time.time() - t1) * 1000:.1f}ms")
 
         # 3. Depth
-        depth_map = self.depth_model.predict(frame)
+        # -----------------------------
+        # Depth (optimized)
+        # -----------------------------
+        t2 = time.time()
+        if not hasattr(self, "last_depth"):
+            self.last_depth = None
+
+        if self.frame_id % 3 == 0 or self.last_depth is None:
+            self.last_depth = self.depth_model.predict(frame)
+
+        depth_map = self.last_depth
+
+        logger.debug(f"[PERF] depth={(time.time() - t2) * 1000:.1f}ms")
+
+        logger.debug(f"[PERF] perception_total={(time.time() - start_total) * 1000:.1f}ms")
 
 
         # 4. Build objects
@@ -175,8 +187,6 @@ class PerceptionSystem:
 
         if d_max - d_min < 1e-6:
             return np.zeros_like(depth_map)
-
-        norm = (depth_map - d_min) / (d_max - d_min)
 
         # Invert so closer = higher value
         return depth_map

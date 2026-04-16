@@ -1,3 +1,4 @@
+# core/rule_engine.py
 import time
 import uuid
 from typing import Dict
@@ -31,59 +32,31 @@ class RuleEngine:
         self.search_interval = 0.8
         self.latest_frame_ts = 0
         self.last_nav_ts = 0.0
-        self.nav_interval = 1.5
+        self.nav_interval = 0.6
         self.last_no_threat_ts = 0
         self.no_threat_interval = 3.0
 
     # ============================================================
 
-    # async def handle_event(self, event: SystemEvent):
-    #
-    #     if event.event_type == "FRAME_ANALYSIS_READY":
-    #         await self._handle_frame(event.payload)
-    #
-    #     elif event.event_type == "USER_COMMAND_RECEIVED":
-    #         await self._handle_command(event.payload)
-    #
-    #     elif event.event_type == "MODE_CHANGED":
-    #         self.mode_state = event.payload
-
     async def handle_event(self, event: SystemEvent):
-
-        print("\n🧠 [RuleEngine] EVENT RECEIVED:", event.event_type)
 
         if event.event_type == "FRAME_ANALYSIS_READY":
             frame = event.payload
 
-            print(f"[RuleEngine] Frame={frame.frame_id} | threats={len(frame.threats)}")
-
             await self._handle_frame(frame)
 
         elif event.event_type == "USER_COMMAND_RECEIVED":
-            print("[RuleEngine] Command received")
             await self._handle_command(event.payload)
 
         elif event.event_type == "MODE_CHANGED":
-            print("[RuleEngine] Mode updated")
             self.mode_state = event.payload
 
     # ============================================================
     # 🔥 NEW CORE HANDLER
     # ============================================================
     async def _handle_frame(self, frame: FrameAnalysis):
+        start = time.time()
         logger.info(f"[Rule] FRAME {frame.frame_id} | threats={len(frame.threats)}")
-
-        print("\n========== RULE ENGINE ==========")
-
-        print(f"[RULE-IN] Frame: {frame.frame_id}")
-        print(f"[RULE-IN] Total threats: {len(frame.threats)}")
-
-        for t in frame.threats:
-            print(
-                f"[RULE-IN] {t.object_id} | {t.class_name} | "
-                f"level={t.threat_level} | depth={t.depth_bucket} | "
-                f"velocity={t.velocity_norm:.2f}"
-            )
 
         if frame.timestamp < self.latest_frame_ts:
             return
@@ -95,12 +68,16 @@ class RuleEngine:
 
         # ✅ store threats for nav filtering
         self._last_frame_threats = threats
-        print(f"Threats: {len(frame.threats)}")
         # 1️⃣THREATS FIRST (priority)
         has_high_priority_threat = any(t.threat_level >= 2 for t in threats)
 
-        for threat in threats:
-            await self._handle_threat(threat)
+        HIGH = [t for t in threats if t.threat_level == 3]
+        MID = [t for t in threats if t.threat_level == 2]
+
+        if HIGH:
+            await self._handle_threat(HIGH[0])
+        elif MID:
+            await self._handle_threat(MID[0])
 
         if self.mode_state.threat_mode:
             now = frame.timestamp
@@ -126,6 +103,7 @@ class RuleEngine:
             return
 
         await self._handle_navigation(scene)
+        logger.debug(f"[PERF] rule={(time.time() - start) * 1000:.1f}ms")
 
     # ============================================================
     # EVERYTHING BELOW = UNCHANGED
@@ -180,8 +158,6 @@ class RuleEngine:
 
             if obj.depth_norm < 0.3 and not is_approaching:
                 continue
-            print(f"id = {obj.object_id} | depth norm = {obj.depth_norm:.3f}")
-
             rels = relations.get(obj.object_id, set())
 
             direction = (
@@ -220,6 +196,9 @@ class RuleEngine:
                 phrases.append(f"{count} {plural} {direction}, {distance}")
             else:
                 phrases.append(f"several {plural} {direction}, {distance}")
+
+        if len(phrases) > 2:
+            phrases = phrases[:2]
 
         if phrases:
             await self._emit(
@@ -384,12 +363,6 @@ class RuleEngine:
         if intent.suppress_if_duplicate and self._is_duplicate(intent):
             logger.info(f"[Rule] SUPPRESS duplicate -> {intent.text}")
             return
-
-        # 🔥 PRINT (for terminal)
-        print(
-            f"[RULE-OUT] {intent.category.upper()} | "
-            f"P{intent.priority} | {intent.text}"
-        )
 
         # 🔥 LOG (for file)
         logger.info(

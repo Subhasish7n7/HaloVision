@@ -1,3 +1,4 @@
+# core/reasoning_layer.py
 import logging
 import time
 import uuid
@@ -47,7 +48,6 @@ class ReasoningLayer:
     # ================= MAIN =================
 
     async def _process_frame(self, tracking_state: TrackingState):
-
         logger.info("\n[Reasoning] ===== NEW FRAME =====")
 
         # 🔥 INPUT LOG
@@ -56,8 +56,6 @@ class ReasoningLayer:
                 f"[Reasoning][IN] {obj.object_id} | {obj.class_name} | "
                 f"depth={obj.depth_norm:.2f} | offset={obj.horizontal_offset_norm:.2f}"
             )
-            print(f"[Reasoning][IN] {obj.object_id} | {obj.class_name} | "
-                f"depth={obj.depth_norm:.2f} | offset={obj.horizontal_offset_norm:.2f}")
 
         self.active_objects = tracking_state.active_objects
         logger.info(
@@ -67,10 +65,17 @@ class ReasoningLayer:
 
         self._cleanup_stale_history(tracking_state.timestamp)
 
-        for obj in self.active_objects.values():
+        MAX_OBJECTS = 10
+        objects = list(self.active_objects.values())[:MAX_OBJECTS]
+
+        for obj in objects:
             self._update_object_history(obj)
 
+        start = time.time()
+
         threats = await self._evaluate_threats()
+
+        logger.debug(f"[PERF] reasoning={(time.time() - start) * 1000:.1f}ms")
 
         logger.info(f"[Reasoning][SUMMARY] threats={len(threats)}")
 
@@ -168,8 +173,6 @@ class ReasoningLayer:
 
         threats = []
         near_th, far_th = self._compute_depth_thresholds()
-        print(f"thresholds near = {near_th:.3f} far = {far_th:.3f}")
-
         for obj in self.active_objects.values():
 
             history = self.object_history.get(obj.object_id)
@@ -180,8 +183,6 @@ class ReasoningLayer:
             velocity = self._compute_velocity(history)
             intercept = self._is_intercepting(history)
             depth_bucket = self._depth_to_bucket(obj.depth_norm, near_th, far_th)
-            print(f"bucket {obj.object_id} depth = {obj.depth_norm:.3f} | {depth_bucket}")
-
             obj.velocity_norm = velocity
 
             # 🔥 PROCESS LOG

@@ -1,9 +1,13 @@
 # App/api/websocket.py
-
 import asyncio
 import numpy as np
 import cv2
 from fastapi import WebSocket
+
+import time
+import logging
+logger = logging.getLogger(__name__)
+
 
 clients = []
 
@@ -105,6 +109,8 @@ async def send_detections(event):
         client.send_json(message)
         for client in clients
     ])
+    latency = (time.time() - event.timestamp) * 1000
+    logger.info(f"[PERF] END_TO_END={latency:.1f}ms")
 
 
 # =========================
