@@ -107,7 +107,7 @@ class SpeechScheduler:
 
     async def _run_loop(self):
         while True:
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.01)
 
             async with self._lock:
                 now = time.time()
@@ -133,7 +133,7 @@ class SpeechScheduler:
                 f"P{intent.priority} | interrupt={interrupt_flag} | text='{intent.text}'"
             )
             # 🔥 DO TTS OUTSIDE LOCK
-            await self._emit(intent)
+            asyncio.create_task(self._emit(intent))
 
             async with self._lock:
                 self._last_emit_ts = time.time()

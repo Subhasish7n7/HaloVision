@@ -23,7 +23,7 @@ class SocketService {
           console.log("📦 DETECTIONS:", data.data);
         }
 
-        console.log("📩 WS:", data); // 🔥 keep this
+        // console.log("📩 WS:", data);
 
         onMessage(data);
       } catch (e) {

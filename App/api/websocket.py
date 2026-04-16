@@ -50,7 +50,7 @@ async def receive_frames(ws, perception, tracker, bus):
         nonlocal latest_frame
 
         while True:
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.001)
 
             frame_data = None
 
@@ -70,8 +70,7 @@ async def receive_frames(ws, perception, tracker, bus):
 
                 tracker.set_frame(frame)
 
-                event = perception.process_frame(frame)
-
+                event = await asyncio.to_thread(perception.process_frame, frame)
                 await bus.publish(event)
 
             except Exception as e:
@@ -102,11 +101,10 @@ async def send_detections(event):
     }
 
     # 🔥 send to all clients
-    for client in clients:
-        try:
-            await client.send_json(message)
-        except Exception as e:
-            print("❌ Send detection error:", e)
+    await asyncio.gather(*[
+        client.send_json(message)
+        for client in clients
+    ])
 
 
 # =========================
@@ -122,8 +120,7 @@ async def send_audio(event):
         }
     }
 
-    for client in clients:
-        try:
-            await client.send_json(message)
-        except Exception as e:
-            print("❌ Send audio error:", e)
+    await asyncio.gather(*[
+        client.send_json(message)
+        for client in clients
+    ])

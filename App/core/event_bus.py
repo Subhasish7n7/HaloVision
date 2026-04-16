@@ -70,12 +70,9 @@ class AsyncEventBus:
             # 🔹 Sequential (debug/testing only)
             for handler in handlers:
                 await self._safe_execute(handler, event)
-        else:
-            # 🔥 Concurrent execution (REAL FIX)
-            await asyncio.gather(*[
-                self._safe_execute(handler, event)
-                for handler in handlers
-            ])
+            else:
+                for handler in handlers:
+                    asyncio.create_task(self._safe_execute(handler, event))
 
     # ----------------------------------
     # SAFE EXECUTION

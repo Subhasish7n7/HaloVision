@@ -52,7 +52,6 @@ class PerceptionSystem:
         # 3. Depth
         depth_map = self.depth_model.predict(frame)
 
-        print(f"depth_map: min {depth_map.min():.3f} max {depth_map.max():.3f}")
 
         # 4. Build objects
         active_objects = {}
@@ -129,7 +128,6 @@ class PerceptionSystem:
             depth_map, x1, y1, x2, y2
         )
 
-        print(f"Perception-> {track.class_name} | depth_norm: {depth_norm:.3f} | depth_conf: {depth_conf:.3f}")
 
         object_id = f"track_{track.track_id}"
 
