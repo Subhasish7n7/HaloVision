@@ -1,7 +1,8 @@
 import time
 import uuid
 from typing import Dict
-
+import torch
+from ultralytics import YOLO
 import numpy as np
 
 from App.core.contracts import (
@@ -12,6 +13,12 @@ from App.core.contracts import (
 
 
 class PerceptionSystem:
+
+    def __init__(self):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = YOLO("yolov8n.pt")
+        self.model.to(self.device)
+        self.model.fuse()  # speed boost
     def __init__(self, detector, tracker, depth_model):
         """
         detector: YOLO-like model → returns detections

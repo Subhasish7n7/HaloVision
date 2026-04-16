@@ -6,6 +6,7 @@ type Detection = {
   label: string;
   depth: number;
   bbox: [number, number, number, number];
+  lastSeen?: number;
 };
 
 type Props = {
@@ -19,7 +20,7 @@ export const CameraView = ({ setDetections }: Props) => {
   const [detections, setLocalDetections] = useState<Detection[]>([]);
   const lastSent = useRef(0);
 
-  // 🎥 CAMERA
+  // 🎥 CAMERA START
   useEffect(() => {
     const startCamera = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -37,10 +38,10 @@ export const CameraView = ({ setDetections }: Props) => {
     startCamera();
   }, []);
 
-  // 🔌 SOCKET (FIXED)
+  // 🔌 SOCKET CONNECTION
   useEffect(() => {
     socketService.connect((data) => {
-      // 🔊 AUDIO
+      // 🔊 AUDIO RESPONSE
       if (data?.event_type === "SPEECH_AUDIO_READY") {
         const audioBase64 = data.payload?.audio_base64;
 
@@ -53,18 +54,56 @@ export const CameraView = ({ setDetections }: Props) => {
         return;
       }
 
-      // 📦 DETECTIONS
+      // 📦 DETECTIONS (FIXED TRACKING)
       if (data?.type === "detections") {
-       const formatted: Detection[] = data.data.map((obj: any) => ({
+        const now = Date.now();
+
+        // 🔥 LOCAL STATE (BOX DRAWING)
+        setLocalDetections((prev) => {
+          const updated: Record<string, Detection> = {};
+
+          // keep previous
+          prev.forEach((d) => {
+            updated[d.id] = d;
+          });
+
+          // update new
+          data.data.forEach((obj: any) => {
+            updated[obj.id] = {
               id: obj.id,
               label: obj.label,
               depth: obj.depth,
               bbox: obj.bbox,
-            }));
-        console.log("✅ FORMATTED::", formatted); // debug
+              lastSeen: now,
+            };
+          });
 
-        setLocalDetections(formatted);
-        setDetections(formatted);
+          // remove old (not seen recently)
+          return Object.values(updated).filter(
+            (d) => now - (d.lastSeen || now) < 500
+          );
+        });
+
+        // 🔥 GLOBAL STATE (RIGHT PANEL)
+        setDetections((prev: any[]) => {
+          const updated: Record<string, any> = {};
+
+          prev.forEach((d) => {
+            updated[d.id] = d;
+          });
+
+          data.data.forEach((obj: any) => {
+            updated[obj.id] = {
+              ...obj,
+              lastSeen: now,
+            };
+          });
+
+          return Object.values(updated).filter(
+            (d: any) => now - (d.lastSeen || now) < 500
+          );
+        });
+
         return;
       }
     });
@@ -72,7 +111,7 @@ export const CameraView = ({ setDetections }: Props) => {
     return () => socketService.disconnect();
   }, [setDetections]);
 
-  // 📸 FRAME LOOP
+  // 📸 FRAME SENDER LOOP
   useEffect(() => {
     let animationFrameId: number;
 
@@ -125,16 +164,16 @@ export const CameraView = ({ setDetections }: Props) => {
     return () => cancelAnimationFrame(animationFrameId);
   }, []);
 
-  // 📐 DRAW
+  // 📐 GET VIDEO SIZE
   const getVideoSize = () => {
-  const video = videoRef.current;
-  if (!video) return { width: 640, height: 480 };
+    const video = videoRef.current;
+    if (!video) return { width: 640, height: 480 };
 
-  return {
-    width: video.clientWidth || 640,
-    height: video.clientHeight || 480,
+    return {
+      width: video.clientWidth || 640,
+      height: video.clientHeight || 480,
+    };
   };
-};
 
   return (
     <div style={{ position: "relative" }}>
@@ -142,37 +181,39 @@ export const CameraView = ({ setDetections }: Props) => {
         ref={videoRef}
         autoPlay
         playsInline
-        style={{ width: "640px", height: "480px" }}  // ✅ ADD THIS
-        />
+        style={{ width: "640px", height: "480px" }}
+      />
 
+      {/* 📦 DRAW BOXES */}
       {detections.map((d) => {
-  const { width, height } = getVideoSize();
+        const { width, height } = getVideoSize();
+        const [x1, y1, x2, y2] = d.bbox;
 
-  const [x1, y1, x2, y2] = d.bbox;
+        const boxWidth = x2 - x1;
+        const boxHeight = y2 - y1;
 
-  const boxWidth = x2 - x1;
-  const boxHeight = y2 - y1;
-
-  return (
-    <div
-      key={d.id}
-      className="box"
-      style={{
-        position: "absolute",
-        top: `${(y1 / 480) * height}px`,
-        left: `${(x1 / 640) * width}px`,
-        width: `${(boxWidth / 640) * width}px`,
-        height: `${(boxHeight / 480) * height}px`,
-        border: "2px solid cyan",
-        color: "cyan",
-        fontSize: "12px",
-        background: "rgba(0,0,0,0.3)",
-      }}
-    >
-      {d.label}
-    </div>
-  );
-})}
+        return (
+          <div
+            key={d.id}
+            style={{
+              position: "absolute",
+              top: `${(y1 / 480) * height}px`,
+              left: `${(x1 / 640) * width}px`,
+              width: `${(boxWidth / 640) * width}px`,
+              height: `${(boxHeight / 480) * height}px`,
+              border: "2px solid cyan",
+              color: "cyan",
+              fontSize: "12px",
+              background: "rgba(0,0,0,0.3)",
+              display: "flex",
+              alignItems: "flex-start",
+              padding: "2px",
+            }}
+          >
+            {d.label}
+          </div>
+        );
+      })}
 
       <canvas ref={canvasRef} style={{ display: "none" }} />
     </div>

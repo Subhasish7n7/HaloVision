@@ -1,112 +1,129 @@
-from fastapi import WebSocket, WebSocketDisconnect
+# App/api/websocket.py
+
+import asyncio
 import numpy as np
 import cv2
-import json
-import base64
+from fastapi import WebSocket
 
-from App.core.contracts import SystemEvent
-
-connected_client: WebSocket | None = None
+clients = []
 
 
 # =========================
 # REGISTER CLIENT
 # =========================
 async def register_client(ws: WebSocket):
-    global connected_client
     await ws.accept()
-    connected_client = ws
-    print("✅ Frontend connected")
+    clients.append(ws)
+    print("✅ Client connected")
 
 
 # =========================
-# HANDLE DISCONNECT
+# FRAME DECODER
 # =========================
-def disconnect_client():
-    global connected_client
-    connected_client = None
-    print("🔌 Frontend disconnected")
+def decode_frame(buffer: bytes) -> np.ndarray:
+    np_arr = np.frombuffer(buffer, np.uint8)
+    frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    return frame
 
 
 # =========================
-# SEND DETECTIONS (FAST PATH)
+# RECEIVE FRAMES (LATEST ONLY)
 # =========================
-async def send_detections(event: SystemEvent):
-    global connected_client
+async def receive_frames(ws, perception, tracker, bus):
+    latest_frame = None
+    lock = asyncio.Lock()
 
-    if connected_client is None:
-        return
+    async def receiver():
+        nonlocal latest_frame
+        while True:
+            try:
+                data = await ws.receive_bytes()
 
-    state = event.payload
-    objects = state.active_objects
+                async with lock:
+                    latest_frame = data  # 🔥 overwrite old
+
+            except Exception as e:
+                print("❌ Receiver error:", e)
+                break
+
+    async def processor():
+        nonlocal latest_frame
+
+        while True:
+            await asyncio.sleep(0)
+
+            frame_data = None
+
+            async with lock:
+                if latest_frame is not None:
+                    frame_data = latest_frame
+                    latest_frame = None
+
+            if frame_data is None:
+                continue
+
+            try:
+                frame = decode_frame(frame_data)
+
+                if frame is None:
+                    continue
+
+                tracker.set_frame(frame)
+
+                event = perception.process_frame(frame)
+
+                await bus.publish(event)
+
+            except Exception as e:
+                print("❌ Processor error:", e)
+
+    await asyncio.gather(receiver(), processor())
+
+
+# =========================
+# SEND DETECTIONS
+# =========================
+async def send_detections(event):
+    data = event.payload
 
     detections = []
 
-    for obj in objects.values():
-        x1, y1, x2, y2 = obj.bbox
-
+    for obj in data.active_objects.values():
         detections.append({
             "id": obj.object_id,
             "label": obj.class_name,
             "depth": obj.depth_norm,
-            "bbox": [x1, y1, x2, y2]
+            "bbox": obj.bbox,
         })
 
     message = {
         "type": "detections",
-        "data": detections
+        "data": detections,
     }
 
-    try:
-        await connected_client.send_text(json.dumps(message))
-    except:
-        disconnect_client()
+    # 🔥 send to all clients
+    for client in clients:
+        try:
+            await client.send_json(message)
+        except Exception as e:
+            print("❌ Send detection error:", e)
 
 
 # =========================
-# SEND AUDIO (SMART PATH)
+# SEND AUDIO
 # =========================
-async def send_audio(event: SystemEvent):
-    global connected_client
-
-    if connected_client is None:
-        return
-
-    audio = event.payload
+async def send_audio(event):
+    payload = event.payload
 
     message = {
-        "type": "audio",
-        "audio": audio.audio_base64,
-        "text": audio.text,
-        "priority": audio.priority,
-        "interrupt": audio.interrupt_current
+        "event_type": "SPEECH_AUDIO_READY",
+        "payload": {
+            "audio_base64": payload.audio_base64
+        }
     }
 
-    try:
-        await connected_client.send_text(json.dumps(message))
-    except:
-        disconnect_client()
-
-
-# =========================
-# RECEIVE FRAMES
-# =========================
-async def receive_frames(ws: WebSocket, perception, tracker, bus):
-    try:
-        while True:
-            data = await ws.receive_bytes()
-
-            np_arr = np.frombuffer(data, np.uint8)
-            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-            if frame is None:
-                continue
-
-            tracker.set_frame(frame)
-
-            event = perception.process_frame(frame)
-
-            await bus.publish(event, await_handlers=False)
-
-    except WebSocketDisconnect:
-        disconnect_client()
+    for client in clients:
+        try:
+            await client.send_json(message)
+        except Exception as e:
+            print("❌ Send audio error:", e)

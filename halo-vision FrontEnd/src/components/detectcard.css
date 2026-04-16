@@ -1,0 +1,54 @@
+/* CARD */
+.detect-card {
+  display: flex;
+  align-items: center;
+  background: #020617;
+  border: 2px solid cyan;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  transition: 0.3s;
+}
+
+/* HOVER */
+.detect-card:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 10px cyan;
+}
+
+/* LEFT BAR */
+.detect-bar {
+  width: 8px;
+  height: 100%;
+}
+
+/* CONTENT */
+.detect-content {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* TITLE */
+.detect-title {
+  font-size: 15px;
+  font-weight: bold;
+}
+
+/* MESSAGE */
+.detect-message {
+  font-size: 13px;
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+/* 🔥 DANGER ANIMATION (THREAT 3) */
+.danger {
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 5px red; }
+  50% { box-shadow: 0 0 20px red; }
+  100% { box-shadow: 0 0 5px red; }
+}

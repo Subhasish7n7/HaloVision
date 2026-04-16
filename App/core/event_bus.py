@@ -1,11 +1,11 @@
 # core/event_bus.py
+
 import asyncio
 import logging
 import time
-
-
 from collections import defaultdict
 from typing import Awaitable, Callable, Dict, List
+
 from App.core.contracts import SystemEvent
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ EventHandler = Callable[[SystemEvent], Awaitable[None]]
 class AsyncEventBus:
     """
     In-memory asynchronous publish/subscribe event bus.
-    Supports debug visibility and optional awaited publishing.
+    Non-blocking, concurrent execution of handlers.
     """
 
     def __init__(self) -> None:
@@ -47,7 +47,9 @@ class AsyncEventBus:
     ) -> None:
         """
         Publish event.
-        If await_handlers=True, waits for all handlers (useful for testing).
+
+        await_handlers=True  → sequential (for testing)
+        await_handlers=False → concurrent (real-time system)
         """
 
         handlers = self._subscribers.get(event.event_type, [])
@@ -64,21 +66,16 @@ class AsyncEventBus:
             f"(priority={event.priority})"
         )
 
-        tasks = []
-
-        for handler in handlers:
-            if await_handlers:
+        if await_handlers:
+            # 🔹 Sequential (debug/testing only)
+            for handler in handlers:
                 await self._safe_execute(handler, event)
-            else:
-                task = asyncio.create_task(
-                    self._safe_execute(handler, event)
-                )
-                tasks.append(task)
-
-        if not await_handlers:
-            logger.debug(
-                f"[EventBus] {len(tasks)} async tasks scheduled"
-            )
+        else:
+            # 🔥 Concurrent execution (REAL FIX)
+            await asyncio.gather(*[
+                self._safe_execute(handler, event)
+                for handler in handlers
+            ])
 
     # ----------------------------------
     # SAFE EXECUTION

@@ -1,0 +1,75 @@
+/* navbar.css */
+.halo-navbar {
+  display: flex;
+  align-items: center;
+  background: black;
+  border-bottom: 1px solid rgba(0,255,255,0.2);
+  padding: 12px 20px;
+}
+.navbar-nav{
+  align-items: center;
+}
+
+.halo-logo {
+  color: cyan !important;
+  font-weight: bold;
+  font-size: 22px;
+  letter-spacing: 1px;
+}
+
+.navbar-collapse {
+  display: flex !important;
+  justify-content: space-between;
+}
+
+.halo-link {
+  color: rgba(0,255,255,0.7) !important;
+  margin: 0 15px;
+  transition: 0.3s;
+}
+
+.halo-link:hover {
+  color: cyan !important;
+  text-shadow: 0 0 10px cyan;
+}
+
+.halo-btn {
+  background: linear-gradient(135deg, cyan, #00ffff);
+  color: black !important;
+  font-weight: bold;
+  padding: 8px 20px;
+  border-radius: 25px;
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.halo-btn:hover {
+  box-shadow: 0 0 15px cyan;
+}
+
+.halo-btn-outline {
+  border: 2px solid cyan;
+  color: cyan !important;
+  background: transparent;
+  padding: 8px 18px;
+  border-radius: 25px;
+  font-weight: bold;
+  transition: 0.3s;
+}
+
+.halo-btn-outline:hover {
+  background: cyan;
+  color: black !important;
+  box-shadow: 0 0 15px cyan;
+}
+
+/* 🔥 Glow Effect */
+.halo-btn:hover {
+  box-shadow: 0 0 10px cyan, 0 0 25px cyan, 0 0 40px rgba(0,255,255,0.6);
+  transform: scale(1.05);
+}
+
+/* Click effect */
+.halo-btn:active {
+  transform: scale(0.95);
+}
