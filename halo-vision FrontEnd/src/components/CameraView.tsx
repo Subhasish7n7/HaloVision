@@ -64,7 +64,7 @@ export const CameraView = ({ detections }: Props) => {
       canvas.height = 480;
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
+      console.log("📦 detections:", detections);
       canvas.toBlob(
         (blob) => {
           if (!blob) return;

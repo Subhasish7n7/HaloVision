@@ -1,47 +1,40 @@
 class VoiceScheduler {
   private queue: any[] = [];
-  private speaking: boolean = false;
+  private speaking = false;
 
-  speak(text: string, priority: number) {
-    // 🚨 HIGH PRIORITY (interrupt)
+  speak(text: string, priority: number, direction?: string) {
+    // 🔥 Direction enhancement
+    let finalText = text;
+
+    if (direction === "left") finalText = "Left side " + text;
+    if (direction === "right") finalText = "Right side " + text;
+
+    // 🔥 PRIORITY SYSTEM
     if (priority === 0) {
       speechSynthesis.cancel();
       this.queue = [];
-      this.queue.push({ text, priority });
-      this.process();
-      return;
     }
 
-    // ⚠️ MEDIUM PRIORITY (queue)
-    if (priority === 1) {
-      this.queue.push({ text, priority });
-      this.process();
-      return;
-    }
-
-    // ℹ️ LOW PRIORITY (skip if busy)
-    if (priority >= 2) {
-      if (this.speaking) return;
-      this.queue.push({ text, priority });
-      this.process();
-    }
+    this.queue.push({ text: finalText, priority });
+    this.process();
   }
 
   private process() {
-    if (this.speaking) return;
-    if (this.queue.length === 0) return;
+    if (this.speaking || this.queue.length === 0) return;
 
     const item = this.queue.shift();
-    if (!item) return;
-
     this.speaking = true;
 
     const utter = new SpeechSynthesisUtterance(item.text);
 
-    // 🔥 optional styling
+    // 🔥 STYLE BY PRIORITY
     if (item.priority === 0) {
-      utter.rate = 1.2;
-      utter.pitch = 1.3;
+      utter.rate = 1.3;
+      utter.pitch = 1.4;
+    } else if (item.priority === 1) {
+      utter.rate = 1.1;
+    } else {
+      utter.rate = 0.9;
     }
 
     utter.onend = () => {

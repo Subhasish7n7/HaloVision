@@ -80,11 +80,25 @@ class PerceptionSystem:
                 continue
 
             # 🔥 FIXED FILTER (IMPORTANT)
+            # 🔥 FIXED LOGIC
             if SEARCH_TARGET:
                 if SEARCH_TARGET in obj.class_name.lower():
                     active_objects[obj.object_id] = obj
             else:
                 active_objects[obj.object_id] = obj
+
+            # 🔥 ADD THIS (fallback)
+            if not active_objects:
+                for track in tracks:
+                    obj = self._build_object_data(
+                        track=track,
+                        depth_map=depth_map,
+                        frame_width=w,
+                        frame_height=h,
+                        timestamp=timestamp,
+                    )
+                    if obj:
+                        active_objects[obj.object_id] = obj
 
         logger.debug(f"[INFO] objects={len(active_objects)}")
 

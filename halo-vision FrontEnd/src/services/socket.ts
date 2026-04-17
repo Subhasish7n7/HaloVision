@@ -33,11 +33,11 @@ class SocketService {
 
         const data = JSON.parse(text);
 
-        // 🔊 SPEECH
-        if (data.type === "speech_text") {
-          const utter = new SpeechSynthesisUtterance(data.data);
-          speechSynthesis.speak(utter);
-        }
+        // // 🔊 SPEECH
+        // if (data.type === "speech_text") {
+        //   const utter = new SpeechSynthesisUtterance(data.data);
+        //   speechSynthesis.speak(utter);
+        // }
 
         onMessage(data);
       } catch {}

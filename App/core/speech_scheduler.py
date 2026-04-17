@@ -1,4 +1,5 @@
 # core/speech_scheduler.py
+
 import asyncio
 import time
 import uuid
@@ -9,10 +10,9 @@ from typing import Dict, Tuple, List, Optional
 from App.core.contracts import (
     SystemEvent,
     SpeechIntent,
-    SpeechAudio,   # ✅ NEW
 )
 
-from App.core.tts_engine import TTSEngine  # ✅ NEW
+from App.core.tts_engine import tts_engine
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class SpeechScheduler:
     ):
         self.event_bus = event_bus
 
-        self._queue: List[Tuple[int, float, SpeechIntent, bool]] = []
+        self._queue: List[Tuple[int, float, SpeechIntent]] = []
         self._current_intent: Optional[SpeechIntent] = None
 
         self._last_spoken: Dict[Tuple, float] = {}
@@ -41,10 +41,6 @@ class SpeechScheduler:
 
         self._lock = asyncio.Lock()
         self._runner_task: Optional[asyncio.Task] = None
-        self._is_speaking: bool = False
-
-        # ✅ INIT TTS
-        self.tts = TTSEngine()
 
     # ============================================================
 
@@ -70,39 +66,18 @@ class SpeechScheduler:
             if intent.suppress_if_duplicate and self._is_duplicate(intent):
                 return
 
-            interrupt = (
-                    self._is_speaking and
-                    self._current_intent is not None and
-                    intent.priority < self._current_intent.priority
-            )
-
-
-            if interrupt:
-                logger.info(
-                    f"[INTERRUPT SIGNAL] New P{intent.priority} will interrupt "
-                    f"P{self._current_intent.priority}"
-                )
-
-            should_interrupt_current = (
-                    self._is_speaking and
-                    self._current_intent is not None and
-                    intent.priority < self._current_intent.priority
-            )
             logger.info(
-                f"[SpeechScheduler][QUEUE_PUSH] "
-                f"P{intent.priority} | interrupt={should_interrupt_current} | "
-                f"text='{intent.text}' | queue_size={len(self._queue) + 1}"
+                f"[SpeechScheduler][QUEUE] "
+                f"P{intent.priority} | text='{intent.text}'"
             )
 
             heapq.heappush(
                 self._queue,
-                (intent.priority, intent.created_ts, intent, should_interrupt_current)
+                (intent.priority, intent.created_ts, intent)
             )
 
             if len(self._queue) > self._queue_max_size:
                 heapq.heappop(self._queue)
-
-
 
     # ============================================================
 
@@ -121,25 +96,21 @@ class SpeechScheduler:
                 if not self._queue:
                     continue
 
-                if self._current_intent is not None:
-                    continue
+                _, _, intent = heapq.heappop(self._queue)
 
-                _, _, intent, interrupt_flag = heapq.heappop(self._queue)
                 self._current_intent = intent
-                self._current_interrupt_flag = interrupt_flag
-                self._is_speaking = True
 
             logger.info(
-                f"[SpeechScheduler][DEQUEUE] "
-                f"P{intent.priority} | interrupt={interrupt_flag} | text='{intent.text}'"
+                f"[SpeechScheduler][SPEAK] "
+                f"P{intent.priority} | text='{intent.text}'"
             )
-            # 🔥 DO TTS OUTSIDE LOCK
-            asyncio.create_task(self._emit(intent))
+
+            # 🔥 SPEAK HERE (IMPORTANT)
+            await tts_engine.speak(intent.text)
 
             async with self._lock:
                 self._last_emit_ts = time.time()
                 self._current_intent = None
-                self._is_speaking = False
 
     # ============================================================
 
@@ -157,51 +128,8 @@ class SpeechScheduler:
 
     def _cleanup_expired(self, now: float):
         self._queue = [
-            (p, ts, i, interrupt)
-            for (p, ts, i, interrupt) in self._queue
+            (p, ts, i)
+            for (p, ts, i) in self._queue
             if i.expires_ts > now
         ]
         heapq.heapify(self._queue)
-
-    # ============================================================
-    # 🔥 UPDATED OUTPUT
-    # ============================================================
-
-    async def _emit(self, intent: SpeechIntent):
-        interrupt = getattr(self, "_current_interrupt_flag", False)
-        logger.info(
-            f"[SpeechScheduler][EMIT] P{intent.priority} | "
-            f"interrupt_flag={interrupt} | text='{intent.text}'"
-        )
-
-        start = time.time()
-
-        audio_base64 = await self.tts.synthesize(intent.text)
-
-
-        tts_time = (time.time() - start) * 1000
-        logger.info(f"[SpeechScheduler] TTS done in {tts_time:.2f} ms")
-
-        if not audio_base64:
-            logger.warning("[SpeechScheduler] No audio -> sending TEXT-ONLY packet")
-
-
-
-        output = SpeechAudio(
-            audio_base64=audio_base64,
-            text=intent.text,
-            category=intent.category,
-            priority=intent.priority,
-            timestamp=time.time(),
-            interrupt_current=interrupt,  # ✅ NEW
-        )
-
-        await self.event_bus.publish(
-            SystemEvent(
-                event_id=str(uuid.uuid4()),
-                event_type="SPEECH_AUDIO_READY",  # ✅ NEW
-                payload=output,
-                priority=intent.priority,
-                timestamp=time.time(),
-            )
-        )
