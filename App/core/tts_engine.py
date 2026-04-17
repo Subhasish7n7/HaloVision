@@ -1,31 +1,36 @@
-# core/tts_engine.py
 import asyncio
 import logging
 import base64
 import io
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# 🔧 TOGGLE (IMPORTANT)
+# 🔧 TOGGLE
 # ============================================================
 
-ENABLE_TTS = True  # ❌ KEEP FALSE ON WORK LAPTOP
-# Set to True on your RTX machine
+ENABLE_TTS = True  # ✅ now works locally
 
 
 class TTSEngine:
     def __init__(self):
         self.enabled = ENABLE_TTS
-        self.tts = None
+        self.engine = None
 
         if self.enabled:
             try:
-                from TTS.api import TTS
-                self.tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC")
-                logger.info("[TTS] Model loaded successfully")
+                import pyttsx3
+
+                self.engine = pyttsx3.init()
+                self.engine.setProperty('rate', 180)
+                self.engine.setProperty('volume', 1.0)
+
+                logger.info("[TTS] pyttsx3 initialized")
+
             except Exception as e:
-                logger.error(f"[TTS] Failed to load model: {e}")
+                logger.error(f"[TTS] Failed to init pyttsx3: {e}")
                 self.enabled = False
         else:
             logger.info("[TTS] Running in DISABLED mode")
@@ -39,23 +44,28 @@ class TTSEngine:
         try:
             loop = asyncio.get_running_loop()
 
-            # 🔹 Run TTS model (blocking → thread)
-            wav_bytes = await loop.run_in_executor(
-                None,
-                self.tts.tts,
-                text
-            )
+            def generate_audio():
+                # 🔥 Create temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    filename = tmp.name
 
-            # 🔹 Run audio encoding (also blocking → thread)
-            def encode_audio():
-                buffer = io.BytesIO()
-                import soundfile as sf
-                sf.write(buffer, wav_bytes, samplerate=22050, format="WAV")
-                return base64.b64encode(buffer.getvalue()).decode("utf-8")
+                # 🔊 Generate speech
+                self.engine.save_to_file(text, filename)
+                self.engine.runAndWait()
 
+                # 📦 Read and encode
+                with open(filename, "rb") as f:
+                    audio_bytes = f.read()
+
+                # 🧹 Cleanup
+                os.remove(filename)
+
+                return base64.b64encode(audio_bytes).decode("utf-8")
+
+            # 🔥 Run in thread (non-blocking)
             audio_base64 = await loop.run_in_executor(
                 None,
-                encode_audio
+                generate_audio
             )
 
             logger.info(f"[TTS] Generated audio for: {text}")

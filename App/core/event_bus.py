@@ -1,5 +1,3 @@
-# core/event_bus.py
-
 import asyncio
 import logging
 import time
@@ -48,8 +46,8 @@ class AsyncEventBus:
         """
         Publish event.
 
-        await_handlers=True  → sequential (for testing)
-        await_handlers=False → concurrent (real-time system)
+        await_handlers=True  → sequential (debug/testing)
+        await_handlers=False → concurrent (real-time)
         """
 
         handlers = self._subscribers.get(event.event_type, [])
@@ -66,13 +64,15 @@ class AsyncEventBus:
             f"(priority={event.priority})"
         )
 
+        # ✅ FIXED LOGIC (THIS WAS YOUR BUG)
         if await_handlers:
-            # 🔹 Sequential (debug/testing only)
+            # 🔹 Sequential execution
             for handler in handlers:
                 await self._safe_execute(handler, event)
-            else:
-                for handler in handlers:
-                    asyncio.create_task(self._safe_execute(handler, event))
+        else:
+            # 🔥 Concurrent execution
+            for handler in handlers:
+                asyncio.create_task(self._safe_execute(handler, event))
 
     # ----------------------------------
     # SAFE EXECUTION
@@ -86,6 +86,7 @@ class AsyncEventBus:
         start = time.perf_counter()
 
         try:
+            # 🔥 THIS ACTUALLY RUNS YOUR HANDLER NOW
             await handler(event)
 
             elapsed = (time.perf_counter() - start) * 1000

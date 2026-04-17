@@ -1,13 +1,14 @@
-// components/Navbar.tsx
 import { Link } from "react-router-dom";
 import "./navbar.css";
+import 'bootstrap/dist/css/bootstrap.min.css';
+import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 
 export default function Navbar() {
   return (
     <nav className="navbar navbar-expand-lg halo-navbar">
       <div className="container-fluid">
 
-        {/* LEFT: LOGO */}
+        {/* LOGO */}
         <Link className="navbar-brand halo-logo" to="/">
           Halo Vision
         </Link>
@@ -22,7 +23,7 @@ export default function Navbar() {
           <span className="navbar-toggler-icon"></span>
         </button>
 
-        {/* CENTER + RIGHT */}
+        {/* CONTENT */}
         <div className="collapse navbar-collapse" id="navbarContent">
 
           {/* CENTER LINKS */}
@@ -39,14 +40,14 @@ export default function Navbar() {
           </ul>
 
           {/* RIGHT BUTTONS */}
-                <div className="d-flex gap-2">
-                <Link to="/login" className="btn halo-btn-outline">
-                  Login
-                </Link>
-                <Link to="/signup" className="btn halo-btn">
-                  Sign Up
-                </Link>
-              </div>
+          <div className="d-flex gap-2">
+            <Link to="/login" className="btn halo-btn-outline">
+              Login
+            </Link>
+            <Link to="/signup" className="btn halo-btn">
+              Sign Up
+            </Link>
+          </div>
 
         </div>
       </div>

@@ -164,3 +164,45 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* =========================
+   SEARCH BOX (CYAN STYLE)
+========================= */
+.search-box {
+  backdrop-filter: blur(6px);
+  margin-top: 15px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* INPUT */
+.search-input {
+  padding: 10px;
+  width: 250px;
+  border: 2px solid #00ffff;
+  background-color: black;
+  color: #00ffff;
+  border-radius: 6px;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: #00aaaa;
+}
+
+/* BUTTON */
+.search-btn {
+  padding: 10px 20px;
+  border: 2px solid #00ffff;
+  background-color: black;
+  color: #00ffff;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.search-btn:hover {
+  background-color: #001f1f;
+  box-shadow: 0 0 10px #00ffff;
+}

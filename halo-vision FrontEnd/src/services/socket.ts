@@ -1,14 +1,27 @@
 class SocketService {
   private ws: WebSocket | null = null;
+  private url = "ws://localhost:8000/ws";
+  private isConnecting = false;
+  private reconnectTimer: any = null;
 
+  // =========================
+  // CONNECT
+  // =========================
   connect(onMessage: (data: any) => void) {
-    if (this.ws) return;
+    if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) return;
 
-    this.ws = new WebSocket("ws://127.0.0.1:8000/ws");
+    this.isConnecting = true;
+
+    this.ws = new WebSocket(this.url);
     this.ws.binaryType = "arraybuffer";
 
     this.ws.onopen = () => {
-      console.log("✅ WebSocket connected");
+      this.isConnecting = false;
+
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -19,38 +32,87 @@ class SocketService {
             : new TextDecoder().decode(event.data);
 
         const data = JSON.parse(text);
-        if (data?.type === "detections") {
-          console.log("📦 DETECTIONS:", data.data);
+
+        // 🔊 SPEECH
+        if (data.type === "speech_text") {
+          const utter = new SpeechSynthesisUtterance(data.data);
+          speechSynthesis.speak(utter);
         }
 
-        // console.log("📩 WS:", data);
-
         onMessage(data);
-      } catch (e) {
-        console.error("❌ WS parse error:", e);
-      }
+      } catch {}
     };
 
     this.ws.onclose = () => {
-      console.log("❌ WebSocket disconnected");
       this.ws = null;
+      this.isConnecting = false;
 
-      setTimeout(() => this.connect(onMessage), 1000);
-    };
-
-    this.ws.onerror = (err) => {
-      console.error("❌ WebSocket error:", err);
+      if (!this.reconnectTimer) {
+        this.reconnectTimer = setTimeout(() => {
+          this.connect(onMessage);
+          this.reconnectTimer = null;
+        }, 2000);
+      }
     };
   }
 
+  // =========================
+  // SEND FRAME
+  // =========================
   sendFrame(buffer: ArrayBuffer) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.ws.send(buffer);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(buffer);
+    }
   }
 
+  // =========================
+  // 🔥 SEND MODE (ALIGNED)
+  // =========================
+  sendMode(mode: string) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+
+    const payload = {
+      navigation_mode: mode === "camera",
+      threat_mode: mode === "text",
+      search_mode: mode === "object",
+      description_mode: mode === "scene",
+      muted: false,
+    };
+
+    this.ws.send(
+      JSON.stringify({
+        type: "mode",
+        data: payload,
+      })
+    );
+  }
+
+  // =========================
+  // SEND SEARCH
+  // =========================
+  sendSearch(text: string) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+
+    this.ws.send(
+      JSON.stringify({
+        type: "search",
+        data: text.toLowerCase(),
+      })
+    );
+  }
+
+  // =========================
+  // DISCONNECT
+  // =========================
   disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     this.ws?.close();
     this.ws = null;
+    this.isConnecting = false;
   }
 }
 
