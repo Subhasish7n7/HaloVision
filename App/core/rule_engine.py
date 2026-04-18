@@ -23,7 +23,7 @@ class RuleEngine:
 
         self.last_spoken_key = None
         self.last_spoken_ts = 0.0
-        self.duplicate_window_sec = 2.5
+        self.duplicate_window_sec = 2
 
         self.object_last_announced: Dict[str, float] = {}
         self.cooldown_sec = 3.5
@@ -48,11 +48,18 @@ class RuleEngine:
         elif event.event_type == "USER_COMMAND_RECEIVED":
             await self._handle_command(event.payload)
 
+
         elif event.event_type == "MODE_CHANGED":
-            self.mode_state = event.payload
+
+            new_state = event.payload
+
+            for field, value in new_state._dict_.items():
+
+                if value is not None:
+                    setattr(self.mode_state, field, value)
 
     # ============================================================
-    # 🔥 NEW CORE HANDLER
+    #   CORE HANDLER
     # ============================================================
     async def _handle_frame(self, frame: FrameAnalysis):
         start = time.time()
@@ -66,9 +73,7 @@ class RuleEngine:
         scene = frame.scene_graph
         threats = frame.threats
 
-        # ✅ store threats for nav filtering
         self._last_frame_threats = threats
-        # 1️⃣THREATS FIRST (priority)
         has_high_priority_threat = any(t.threat_level >= 2 for t in threats)
 
         HIGH = [t for t in threats if t.threat_level == 3]
@@ -90,11 +95,10 @@ class RuleEngine:
                 )
             return
 
-        # 🚫 skip nav if threat is important
         if has_high_priority_threat:
             return
 
-        # 2️⃣ SCENE LOGIC
+
         if self.mode_state.search_mode:
             await self._handle_search(scene)
             return
@@ -105,9 +109,6 @@ class RuleEngine:
         await self._handle_navigation(scene)
         logger.debug(f"[PERF] rule={(time.time() - start) * 1000:.1f}ms")
 
-    # ============================================================
-    # EVERYTHING BELOW = UNCHANGED
-    # ============================================================
 
     def _extract_relations(self, scene):
         rel_map = defaultdict(set)
@@ -124,7 +125,7 @@ class RuleEngine:
         return word + "s"
 
     async def _handle_navigation(self, scene):
-        now = scene.timestamp  # ✅ use frame time (NOT time.time())
+        now = scene.timestamp
 
         if now - self.last_nav_ts < self.nav_interval:
             return
@@ -133,7 +134,6 @@ class RuleEngine:
 
         relations = self._extract_relations(scene)
 
-        # ✅ filter out objects already handled as threats
         threat_ids = {
             t.object_id
             for t in getattr(self, "_last_frame_threats", [])
@@ -148,12 +148,11 @@ class RuleEngine:
                 continue
 
             if obj.object_id in threat_ids:
-                continue  # ✅ avoid duplicate speech
+                continue
 
             if obj.confidence < 0.5:
                 continue
 
-            # ✅ improved far suppression logic
             is_approaching = obj.velocity_norm and obj.velocity_norm > 0
 
             if obj.depth_norm < 0.3 and not is_approaching:
@@ -201,9 +200,18 @@ class RuleEngine:
             phrases = phrases[:2]
 
         if phrases:
-            await self._emit(
-                self._create_intent("info", ". ".join(phrases), 2, None, 3.5)
-            )
+            now = scene.timestamp
+
+            if not hasattr(self, "_last_nav_repeat_ts"):
+                self._last_nav_repeat_ts = 0
+
+            REPEAT_INTERVAL = 2.5
+            if now - self._last_nav_repeat_ts > REPEAT_INTERVAL:
+                self._last_nav_repeat_ts = now
+
+                await self._emit(
+                    self._create_intent("info", ". ".join(phrases), 2, None, 3.5)
+                )
 
     async def _handle_threat(self, threat):
         if self.mode_state.search_mode and threat.threat_level < 3:
@@ -274,6 +282,9 @@ class RuleEngine:
 
         target = self.mode_state.search_target
         if not target:
+            await self._emit(
+                self._create_intent("search", "No target specified", 1, None, 2.0)
+            )
             return
 
         relations = self._extract_relations(scene)
@@ -364,7 +375,6 @@ class RuleEngine:
             logger.info(f"[Rule] SUPPRESS duplicate -> {intent.text}")
             return
 
-        # 🔥 LOG (for file)
         logger.info(
             f"[Rule] EMIT -> {intent.category.upper()} "
             f"| P{intent.priority} | {intent.text}"

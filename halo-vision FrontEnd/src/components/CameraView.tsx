@@ -3,17 +3,18 @@ import { socketService } from "../services/socket";
 
 type Props = {
   detections: any[];
+  active: boolean;
 };
 
-export const CameraView = ({ detections }: Props) => {
+export const CameraView = ({ detections, active }: Props) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastSent = useRef(0);
 
-  // =========================
-  // 🎥 CAMERA
-  // =========================
+  // CAMERA
   useEffect(() => {
+    if (!active) return;
+
     const startCamera = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
@@ -28,12 +29,12 @@ export const CameraView = ({ detections }: Props) => {
     };
 
     startCamera();
-  }, []);
+  }, [active]);
 
-  // =========================
-  // 📸 SEND FRAMES
-  // =========================
+  // SEND FRAMES
   useEffect(() => {
+    if (!active) return;
+
     let animationFrameId: number;
 
     const sendFrame = () => {
@@ -64,7 +65,7 @@ export const CameraView = ({ detections }: Props) => {
       canvas.height = 480;
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      console.log("📦 detections:", detections);
+
       canvas.toBlob(
         (blob) => {
           if (!blob) return;
@@ -83,11 +84,15 @@ export const CameraView = ({ detections }: Props) => {
     sendFrame();
 
     return () => cancelAnimationFrame(animationFrameId);
-  }, []);
+  }, [active]);
 
-  // =========================
-  // 🎯 RENDER
-  // =========================
+  // 🔥 THREAT COLOR
+  const threatLevel = detections.length;
+  let color = "cyan";
+
+  if (threatLevel >= 3) color = "red";
+  else if (threatLevel === 2) color = "yellow";
+
   return (
     <div style={{ position: "relative" }}>
       <video
@@ -109,8 +114,13 @@ export const CameraView = ({ detections }: Props) => {
               left: `${x1}px`,
               width: `${x2 - x1}px`,
               height: `${y2 - y1}px`,
-              border: "3px solid red",
-              backgroundColor: "rgba(255,0,0,0.2)",
+              border: `3px solid ${color}`,
+              backgroundColor:
+                color === "red"
+                  ? "rgba(255,0,0,0.2)"
+                  : color === "yellow"
+                  ? "rgba(255,255,0,0.2)"
+                  : "rgba(0,255,255,0.2)",
               color: "white",
               fontSize: "12px",
               zIndex: 9999,

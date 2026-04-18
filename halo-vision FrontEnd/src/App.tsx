@@ -21,7 +21,7 @@ export default function App() {
   const [searchText, setSearchText] = useState("");
 
   // =========================
-  // SOCKET CONNECTION (CLEAN)
+  // SOCKET CONNECTION
   // =========================
   useEffect(() => {
     socketService.connect((data) => {
@@ -41,7 +41,6 @@ export default function App() {
       socketService.sendMode(newMode);
     }
 
-    // reset search when leaving search mode
     if (newMode !== "object") {
       socketService.sendSearch("");
       setSearchText("");
@@ -49,11 +48,17 @@ export default function App() {
   };
 
   // =========================
+  // 🔥 THREAT LOGIC
+  // =========================
+  const threatCount = detections.length;
+  const isThreat = threatCount >= 3;
+
+  // =========================
   // MAIN UI
   // =========================
   const renderVisionApp = () => (
     <>
-      {/* ================= MENU ================= */}
+      {/* MENU */}
       {mode === "menu" && (
         <div className="menu-container">
           <div className="menu-grid">
@@ -80,7 +85,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ================= MAIN ================= */}
+      {/* MAIN */}
       {mode !== "menu" && (
         <div className="hud">
 
@@ -118,14 +123,17 @@ export default function App() {
 
             {/* CAMERA */}
             <div className="camera-box">
-              {(mode === "camera" || mode === "object") ? (
-                <CameraView detections={detections} />
+              {(mode === "camera" || mode === "object" || mode === "text") ? (
+                <CameraView
+                  detections={detections}
+                  active={mode === "camera" || mode === "object" || mode === "text"}
+                />
               ) : (
                 <p className="coming">🚧 Coming Soon...</p>
               )}
             </div>
 
-            {/* 🔥 SEARCH BELOW CAMERA */}
+            {/* SEARCH */}
             {mode === "object" && (
               <div className="search-box">
                 <input
@@ -148,6 +156,21 @@ export default function App() {
           {/* PANEL */}
           <div className="panel">
             <h3>Detection Panel</h3>
+
+            {/* 🔥 THREAT STATUS */}
+            {mode === "text" && (
+              <div>
+                {isThreat ? (
+                  <p style={{ color: "red", fontWeight: "bold" }}>
+                    ⚠️ Threat detected ({threatCount})
+                  </p>
+                ) : (
+                  <p style={{ color: "green" }}>
+                    ✅ No threat detected
+                  </p>
+                )}
+              </div>
+            )}
 
             {detections.length === 0 ? (
               <p>No data</p>

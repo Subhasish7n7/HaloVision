@@ -1,19 +1,19 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-export default function Signup() {
-  const [name, setName] = useState("");
+export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSignup = async () => {
+  const navigate = useNavigate();
+  const handleLogin = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/auth/signup", {
+      const res = await fetch("http://localhost:8000/api/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name,
           email,
           password,
         }),
@@ -22,19 +22,23 @@ export default function Signup() {
       const data = await res.json();
 
       if (res.ok) {
-        alert("Signup successful ✅");
+        // 🔥 store token (IMPORTANT)
+        localStorage.setItem("token", data.access_token);
 
-        // 🔥 clear form after success
-        setName("");
+        // optional: clear fields
         setEmail("");
         setPassword("");
+        
+        navigate("/");
+        // 👉 you can redirect here if needed
+        // window.location.href = "/dashboard";
+
       } else {
-        // ✅ FIXED (backend sends "detail")
-        alert(data.detail || "Signup failed");
+        alert(data.detail || "Login failed");
       }
 
     } catch (err) {
-      console.error("❌ Signup error:", err);
+      console.error("❌ Login error:", err);
       alert("Server not reachable");
     }
   };
@@ -42,15 +46,7 @@ export default function Signup() {
   return (
     <div style={styles.container}>
       <div style={styles.box}>
-        <h2 style={styles.title}>Sign Up</h2>
-
-        <input
-          type="text"
-          placeholder="Full Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          style={styles.input}
-        />
+        <h2 style={styles.title}>Login</h2>
 
         <input
           type="email"
@@ -68,8 +64,8 @@ export default function Signup() {
           style={styles.input}
         />
 
-        <button style={styles.button} onClick={handleSignup}>
-          Create Account
+        <button style={styles.button} onClick={handleLogin}>
+          Login
         </button>
       </div>
     </div>

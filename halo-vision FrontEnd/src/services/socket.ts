@@ -33,12 +33,7 @@ class SocketService {
 
         const data = JSON.parse(text);
 
-        // // 🔊 SPEECH
-        // if (data.type === "speech_text") {
-        //   const utter = new SpeechSynthesisUtterance(data.data);
-        //   speechSynthesis.speak(utter);
-        // }
-
+        // 🔥 no speech here (backend handles it)
         onMessage(data);
       } catch {}
     };
@@ -66,25 +61,30 @@ class SocketService {
   }
 
   // =========================
-  // 🔥 SEND MODE (ALIGNED)
+  // 🔥 SEND MODE (STRING BASED)
   // =========================
   sendMode(mode: string) {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
 
-    const payload = {
-      navigation_mode: mode === "camera",
-      threat_mode: mode === "text",
-      search_mode: mode === "object",
-      description_mode: mode === "scene",
-      muted: false,
+    // 🔥 map frontend → backend names
+    const modeMap: any = {
+      camera: "navigation",
+      text: "threat",
+      object: "search",
+      scene: "description",
+      voice: "voice",
     };
+
+    const finalMode = modeMap[mode] || mode;
 
     this.ws.send(
       JSON.stringify({
         type: "mode",
-        data: payload,
+        data: finalMode,
       })
     );
+
+    console.log("📤 MODE:", finalMode);
   }
 
   // =========================
@@ -99,6 +99,8 @@ class SocketService {
         data: text.toLowerCase(),
       })
     );
+
+    console.log("🔍 SEARCH:", text);
   }
 
   // =========================
