@@ -1,7 +1,8 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "postgresql://postgres:132109@localhost:5432/halovisionDB"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:132109@localhost:5432/halovisionDB")
 
 engine = create_engine(DATABASE_URL)
 

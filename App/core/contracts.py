@@ -23,6 +23,7 @@ class ObjectData:
     frame_timestamp: float = 0.0
     last_announced_ts: float = 0.0
     announce_cooldown_sec: float = 5.0
+    track_id: int = -1  # ByteTrack-assigned track id (primary identity)
 
 
 @dataclass
@@ -30,6 +31,7 @@ class TrackingState:
     active_objects: Dict[str, ObjectData]
     frame_id: int
     timestamp: float
+    perf: Optional[Dict] = None
 
 
 @dataclass
@@ -44,9 +46,6 @@ class ThreatAssessment:
     timestamp: float
     horizontal_offset_norm: float
     depth_bucket: str
-
-
-
 
 @dataclass
 class SceneRelation:

@@ -16,18 +16,45 @@ from App.core.contracts import (
 
 logger = logging.getLogger(__name__)
 
+# Model is loaded once; only the confidence threshold changes per mode, so
+# starting a search never restarts/reloads the detector.
+NORMAL_CONFIDENCE = 0.45
+SEARCH_CONFIDENCE = 0.25
+
 
 class PerceptionSystem:
 
-    def __init__(self, tracker, depth_model):
+    def __init__(self, tracker, depth_provider):
         self.tracker = tracker
-        self.depth_model = depth_model
+        self.depth_provider = depth_provider
 
         self.frame_id = 0
         self.first_seen: Dict[str, float] = {}
         self.last_depth = None
 
         self.last_spoken = ""
+
+        self._last_infer_ms = 0.0
+        self._fps = 0.0
+        self._perf_last = None
+
+    def perf_stats(self) -> dict:
+        # Frame-rate estimate: instantaneous delta between consecutive reads,
+        # smoothed with an EMA. Unlike a rolling timestamp window this stays
+        # correct even when frames arrive in bursts (WS decode + to_thread).
+        now = time.time()
+        if self._perf_last is not None:
+            dt = now - self._perf_last
+            if dt > 0.01:
+                inst = 1.0 / dt
+                self._fps = self._fps * 0.8 + inst * 0.2 if self._fps else inst
+        self._perf_last = now
+
+        return {
+            "fps": round(self._fps, 1),
+            "infer_ms": round(self._last_infer_ms, 1),
+            "depth_ms": round(getattr(self.depth_provider, "last_ms", lambda: 0.0)(), 1),
+        }
 
     # =========================
     # MAIN PIPELINE
@@ -42,29 +69,27 @@ class PerceptionSystem:
         # =========================
         # 1. TRACKING
         # =========================
+        # Continuous background detection. Search mode relaxes the confidence
+        # threshold (earlier acquisition) without touching the model itself.
+        conf = SEARCH_CONFIDENCE if SEARCH_TARGET else NORMAL_CONFIDENCE
         t1 = time.time()
-        tracks, _ = self.tracker.track(frame)
-        logger.debug(f"[PERF] tracking={(time.time() - t1)*1000:.1f}ms")
+        tracks, _ = self.tracker.track(frame, conf=conf)
+        self._last_infer_ms = (time.time() - t1) * 1000
 
         # =========================
-        # 2. DEPTH (OPTIMIZED)
+        # 2. DEPTH (ASYNC — NEVER BLOCKS DETECTION)
         # =========================
-        t2 = time.time()
-
-        if self.frame_id % 3 == 0 or self.last_depth is None:
-            try:
-                self.last_depth = self.depth_model.predict(frame)
-            except Exception as e:
-                logger.error(f"Depth error: {e}")
-                self.last_depth = None
-
-        depth_map = self.last_depth
-
-        logger.debug(f"[PERF] depth={(time.time() - t2)*1000:.1f}ms")
+        # The DepthUpdater owns inference; we just read the freshest map.
+        # Detection speed is therefore independent of depth-model latency.
+        if getattr(self.depth_provider, "feed", None) is not None:
+            self.depth_provider.feed(frame)
+        depth_map = self.depth_provider.current()
 
         # =========================
-        # 3. BUILD OBJECTS
+        # 3. BUILD OBJECTS (ALWAYS ALL)
         # =========================
+        # Every detected object is tracked continuously so the frontend can
+        # highlight matches instantly. Search just filters *rendering*.
         active_objects = {}
 
         for track in tracks:
@@ -79,41 +104,35 @@ class PerceptionSystem:
             if obj is None:
                 continue
 
-            # 🔥 FIXED FILTER (IMPORTANT)
-            # 🔥 FIXED LOGIC
-            if SEARCH_TARGET:
+            active_objects[obj.object_id] = obj
+
+        # Collapse duplicate/ghost detections: when two boxes of the same
+        # class overlap heavily (split or re-initialized tracks from YOLO /
+        # ByteTrack), keep only the highest-confidence one so one person
+        # never renders as two boxes.
+        active_objects = self._dedupe_overlapping(active_objects)
+
+        # =========================
+        # SEARCH MATCHES + SPEECH
+        # =========================
+        search_matches = {}
+
+        if SEARCH_TARGET:
+            for oid, obj in active_objects.items():
                 if SEARCH_TARGET in obj.class_name.lower():
-                    active_objects[obj.object_id] = obj
-            else:
-                active_objects[obj.object_id] = obj
+                    search_matches[oid] = obj
 
-            # 🔥 ADD THIS (fallback)
-            if not active_objects:
-                for track in tracks:
-                    obj = self._build_object_data(
-                        track=track,
-                        depth_map=depth_map,
-                        frame_width=w,
-                        frame_height=h,
-                        timestamp=timestamp,
-                    )
-                    if obj:
-                        active_objects[obj.object_id] = obj
-
-        logger.debug(f"[INFO] objects={len(active_objects)}")
-
-        # =========================
-        # 🔊 SPEECH (SEARCH MODE)
-        # =========================
-        if SEARCH_TARGET and len(active_objects) > 0:
+        if SEARCH_TARGET and len(search_matches) > 0:
             text = f"{SEARCH_TARGET} found"
 
             if text != self.last_spoken:
                 self.last_spoken = text
                 asyncio.create_task(send_speech_text(text))
 
-        if len(active_objects) == 0:
+        if len(search_matches) == 0:
             self.last_spoken = ""
+
+        logger.debug(f"[INFO] objects={len(active_objects)} matches={len(search_matches)}")
 
         # =========================
         # 4. STATE
@@ -122,6 +141,7 @@ class PerceptionSystem:
             active_objects=active_objects,
             frame_id=self.frame_id,
             timestamp=timestamp,
+            perf=self.perf_stats(),
         )
 
         # =========================
@@ -138,6 +158,49 @@ class PerceptionSystem:
         logger.debug(f"[PERF] total={(time.time() - start_total)*1000:.1f}ms")
 
         return event
+
+    # =========================
+    # DUPLICATE DETECTION MERGE
+    # =========================
+    @staticmethod
+    def _iou(a, b):
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+        inter = iw * ih
+        if inter == 0:
+            return 0.0
+        a_area = (ax2 - ax1) * (ay2 - ay1)
+        b_area = (bx2 - bx1) * (by2 - by1)
+        union = a_area + b_area - inter
+        return inter / union if union > 0 else 0.0
+
+    def _dedupe_overlapping(self, active_objects):
+        """Merge same-class detections whose boxes overlap (IoU >= 0.5),
+        keeping the highest-confidence box per person/object."""
+        items = list(active_objects.values())
+        dropped = set()
+        merged = {}
+
+        for i, obj in enumerate(items):
+            if obj.object_id in dropped:
+                continue
+            for other in items[i + 1:]:
+                if other.object_id in dropped:
+                    continue
+                if other.class_name != obj.class_name:
+                    continue
+                if self._iou(obj.bbox, other.bbox) >= 0.5:
+                    if other.confidence > obj.confidence:
+                        dropped.add(obj.object_id)
+                        obj = other
+                    else:
+                        dropped.add(other.object_id)
+            merged[obj.object_id] = obj
+
+        return merged
 
     # =========================
     # OBJECT BUILDER
@@ -201,6 +264,8 @@ class PerceptionSystem:
                 first_seen_ts=self.first_seen[object_id],
                 last_seen_ts=timestamp,
                 frame_timestamp=timestamp,
+
+                track_id=int(track.track_id),
             )
 
         except Exception as e:

@@ -1,0 +1,10 @@
+# HaloVision-tuned ByteTrack configuration.
+# Larger buffer + stricter matching reduce unnecessary track ID churn so the
+# same physical object keeps its ID (and box color / TTS cooldown) across
+# brief occlusions and low-confidence frames.
+tracker_type: bytetrack
+track_high_thresh: 0.5
+track_low_thresh: 0.15
+new_track_thresh: 0.55
+track_buffer: 45
+match_thresh: 0.85

@@ -14,6 +14,18 @@ from App.core.contracts import (
     SystemEvent,
     FrameAnalysis,
 )
+from App.core.safety import (
+    DEPTH_VERY_CLOSE,
+    DEPTH_NEAR,
+    VELOCITY_HIGH,
+    VELOCITY_MED,
+    W_PROXIMITY,
+    W_VELOCITY,
+    W_ALIGNMENT,
+    RISK_LEVEL_0,
+    RISK_LEVEL_1,
+    RISK_LEVEL_2,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -147,12 +159,12 @@ class ReasoningLayer:
         return max(min(median, 3.0), -3.0)
 
     def _compute_depth_thresholds(self):
-        return 0.6, 0.3
+        return DEPTH_VERY_CLOSE, DEPTH_NEAR
 
-    def _depth_to_bucket(self, depth, near_th, far_th):
-        if depth >= 0.6:
+    def _depth_to_bucket(self, depth):
+        if depth >= DEPTH_VERY_CLOSE:
             return "very_close"
-        elif depth >= 0.35:
+        elif depth >= DEPTH_NEAR:
             return "near"
         return "far"
 
@@ -172,7 +184,6 @@ class ReasoningLayer:
     async def _evaluate_threats(self) -> List[ThreatAssessment]:
 
         threats = []
-        near_th, far_th = self._compute_depth_thresholds()
         for obj in self.active_objects.values():
 
             history = self.object_history.get(obj.object_id)
@@ -182,7 +193,7 @@ class ReasoningLayer:
 
             velocity = self._compute_velocity(history)
             intercept = self._is_intercepting(history)
-            depth_bucket = self._depth_to_bucket(obj.depth_norm, near_th, far_th)
+            depth_bucket = self._depth_to_bucket(obj.depth_norm)
             obj.velocity_norm = velocity
 
             # 🔥 PROCESS LOG
@@ -197,24 +208,24 @@ class ReasoningLayer:
             alignment_score = 1.0 - min(abs(obj.horizontal_offset_norm), 1.0)
 
             risk = (
-                    0.5 * proximity_score +
-                    0.3 * velocity_score +
-                    0.2 * alignment_score
+                    W_PROXIMITY * proximity_score +
+                    W_VELOCITY * velocity_score +
+                    W_ALIGNMENT * alignment_score
             )
 
-            if risk < 0.15:
+            if risk < RISK_LEVEL_0:
                 level = 0
-            elif risk < 0.35:
+            elif risk < RISK_LEVEL_1:
                 level = 1
-            elif risk < 0.6:
+            elif risk < RISK_LEVEL_2:
                 level = 2
             else:
                 level = 3
 
-            if depth_bucket == "very_close" and (velocity > 0.05 or intercept):
+            if depth_bucket == "very_close" and (velocity > VELOCITY_HIGH or intercept):
                 level = 3
 
-            elif depth_bucket == "near" and (velocity > 0.03 or intercept):
+            elif depth_bucket == "near" and (velocity > VELOCITY_MED or intercept):
                 level = max(level, 2)
 
             if level == 0:
@@ -262,8 +273,6 @@ class ReasoningLayer:
         objects = dict(self.active_objects)
         objects["USER"] = user_object
 
-        near_th, far_th = self._compute_depth_thresholds()
-
         for obj in self.active_objects.values():
             direction = (
                 "left" if obj.horizontal_offset_norm < -0.25
@@ -275,7 +284,7 @@ class ReasoningLayer:
             relations.append(
                 SceneRelation(
                     obj.object_id,
-                    self._depth_to_bucket(obj.depth_norm, near_th, far_th),
+                    self._depth_to_bucket(obj.depth_norm),
                     "USER",
                     0.8
                 )

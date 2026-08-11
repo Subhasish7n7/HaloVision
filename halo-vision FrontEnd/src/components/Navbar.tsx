@@ -37,6 +37,24 @@ export default function Navbar() {
             <li className="nav-item">
               <Link className="nav-link halo-link" to="/why">Why Choose Us</Link>
             </li>
+            <li className="nav-item">
+              <Link className="nav-link halo-link" to="/detections">Detections</Link>
+            </li>
+            <li className="nav-item">
+              <Link className="nav-link halo-link" to="/sessions">Sessions</Link>
+            </li>
+            <li className="nav-item">
+              <Link className="nav-link halo-link" to="/alerts">Alerts</Link>
+            </li>
+            <li className="nav-item">
+              <Link className="nav-link halo-link" to="/search-queries">Searches</Link>
+            </li>
+            <li className="nav-item">
+              <Link className="nav-link halo-link" to="/settings">Settings</Link>
+            </li>
+            <li className="nav-item">
+              <Link className="nav-link halo-link" to="/voice-commands">Voice</Link>
+            </li>
           </ul>
 
           {/* RIGHT BUTTONS */}

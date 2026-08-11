@@ -23,7 +23,7 @@ export default function Login() {
 
       if (res.ok) {
         // 🔥 store token (IMPORTANT)
-        localStorage.setItem("token", data.access_token);
+        localStorage.setItem("token", data.token);
 
         // optional: clear fields
         setEmail("");

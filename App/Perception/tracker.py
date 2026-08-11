@@ -1,5 +1,9 @@
 from ultralytics import YOLO
 import torch
+import os
+
+# HaloVision-tuned ByteTrack config (stable IDs across occlusion).
+_TRACKER_YAML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bytetrack_hv.yaml")
 
 
 # =========================
@@ -18,18 +22,21 @@ class Track:
 # =========================
 class ObjectTracker:
 
-    def __init__(self, model_name="yolov8n.pt"):
+    def __init__(self, model_name="yolov8n.pt", imgsz=480):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = YOLO(model_name)
+        self.tracker_yaml = _TRACKER_YAML
+        self.imgsz = imgsz
 
-    def track(self, frame):
+    def track(self, frame, conf=0.45):
 
         results = self.model.track(
             frame,
             persist=True,
-            tracker="bytetrack.yaml",
+            tracker=self.tracker_yaml,
             device=self.device,
-            conf=0.45,
+            imgsz=self.imgsz,
+            conf=conf,
             verbose=False
         )[0]
 

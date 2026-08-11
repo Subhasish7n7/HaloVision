@@ -82,35 +82,46 @@ class SpeechScheduler:
     # ============================================================
 
     async def _run_loop(self):
+
+        logger.info(
+            "[SpeechScheduler] RUN LOOP STARTED"
+        )
+
         while True:
-            await asyncio.sleep(0.01)
+            try:
 
-            async with self._lock:
-                now = time.time()
+                await asyncio.sleep(0.1)
 
-                if now - self._last_emit_ts < self._cooldown_sec:
-                    continue
+                async with self._lock:
 
-                self._cleanup_expired(now)
+                    if len(self._queue) == 0:
+                        continue
 
-                if not self._queue:
-                    continue
+                    _, _, intent = heapq.heappop(
+                        self._queue
+                    )
 
-                _, _, intent = heapq.heappop(self._queue)
+                    logger.info(
+                        f"[SpeechScheduler] POP -> {intent.text}"
+                    )
 
-                self._current_intent = intent
+                logger.info(
+                    f"[SpeechScheduler] SPEAK -> {intent.text}"
+                )
 
-            logger.info(
-                f"[SpeechScheduler][SPEAK] "
-                f"P{intent.priority} | text='{intent.text}'"
-            )
+                await tts_engine.speak(
+                    intent.text
+                )
 
-            # 🔥 SPEAK HERE (IMPORTANT)
-            await tts_engine.speak(intent.text)
+                logger.info(
+                    "[SpeechScheduler] SPEAK DONE"
+                )
 
-            async with self._lock:
-                self._last_emit_ts = time.time()
-                self._current_intent = None
+            except Exception as e:
+
+                logger.exception(
+                    f"[SpeechScheduler] ERROR: {e}"
+                )
 
     # ============================================================
 

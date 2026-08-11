@@ -11,6 +11,7 @@ from App.core.contracts import (
     SpeechIntent,
     ModeState,
 )
+from App.core.safety import DANGEROUS_CLASSES, DEPTH_VERY_CLOSE, DEPTH_NEAR
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class RuleEngine:
 
             new_state = event.payload
 
-            for field, value in new_state._dict_.items():
+            for field, value in new_state.__dict__.items():
 
                 if value is not None:
                     setattr(self.mode_state, field, value)
@@ -165,9 +166,9 @@ class RuleEngine:
                 else "ahead"
             )
 
-            if obj.depth_norm >= 0.6:
+            if obj.depth_norm >= DEPTH_VERY_CLOSE:
                 distance = "very close"
-            elif obj.depth_norm >= 0.35:
+            elif obj.depth_norm >= DEPTH_NEAR:
                 distance = "near you"
             else:
                 distance = "far away"
@@ -251,8 +252,6 @@ class RuleEngine:
         )
 
         is_moving = threat.reason in ["approaching", "intercepting"]
-
-        DANGEROUS_CLASSES = {"car", "bus", "truck", "motorcycle", "bicycle"}
 
         is_dangerous = threat.class_name.lower() in DANGEROUS_CLASSES
 

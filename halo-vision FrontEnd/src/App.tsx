@@ -9,6 +9,12 @@ import About from "./pages/About";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Why from "./pages/Why";
+import DetectionHistory from "./pages/DetectionHistory";
+import Sessions from "./pages/Sessions";
+import Alerts from "./pages/Alerts";
+import SearchQueries from "./pages/SearchQueries";
+import Settings from "./pages/Settings";
+import VoiceCommands from "./pages/VoiceCommands";
 
 import { socketService } from "./services/socket";
 
@@ -197,6 +203,12 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/why" element={<Why />} />
+          <Route path="/detections" element={<DetectionHistory />} />
+          <Route path="/sessions" element={<Sessions />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/search-queries" element={<SearchQueries />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/voice-commands" element={<VoiceCommands />} />
         </Routes>
       </div>
 

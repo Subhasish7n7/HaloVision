@@ -1,5 +1,5 @@
 export const loginUser = async (email: string, password: string) => {
-  const res = await fetch("http://localhost:8000/login", {
+  const res = await fetch("http://localhost:8000/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -9,14 +9,14 @@ export const loginUser = async (email: string, password: string) => {
 };
 
 export const signupUser = async (
-  username: string,
+  name: string,
   email: string,
   password: string
 ) => {
-  const res = await fetch("http://localhost:8000/signup", {
+  const res = await fetch("http://localhost:8000/api/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, email, password }),
+    body: JSON.stringify({ name, email, password }),
   });
 
   return res.json();
