@@ -14,6 +14,18 @@ class LoginSchema(BaseModel):
     password: str
 
 
+class ProfileUpdateSchema(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+class ChangePasswordSchema(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class UserPreferenceSchema(BaseModel):
     tts_speed: Optional[float] = 1
     default_mode: Optional[str] = "navigation"

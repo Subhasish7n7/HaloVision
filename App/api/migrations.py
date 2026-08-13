@@ -22,6 +22,9 @@ _USER_COLUMNS = [
     ("plan_expires_at", "TIMESTAMP"),
     ("last_login_at", "TIMESTAMP"),
     ("created_at", "TIMESTAMP DEFAULT NOW()"),
+    ("phone", "VARCHAR"),
+    ("address", "VARCHAR"),
+    ("photo_url", "TEXT"),
 ]
 
 _SUBSCRIPTION_COLUMNS = [

@@ -21,6 +21,11 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=True)
 
+    # --- Extended profile fields (added via migration) ---
+    phone = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    photo_url = Column(Text, nullable=True)
+
     detections = relationship("Detection", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="user", cascade="all, delete-orphan")
@@ -29,6 +34,10 @@ class User(Base):
     voice_commands = relationship("VoiceCommand", back_populates="user", cascade="all, delete-orphan")
     logins = relationship("LoginAttempt", back_populates="user", cascade="all, delete-orphan")
     subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
+    persons = relationship("Person", back_populates="user", cascade="all, delete-orphan")
+    meetups = relationship("Meetup", back_populates="user", cascade="all, delete-orphan")
+    meetup_sessions = relationship("MeetupSession", back_populates="user", cascade="all, delete-orphan")
+    meetup_settings = relationship("MeetupSetting", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 class Detection(Base):
     __tablename__ = "detections"
@@ -170,3 +179,157 @@ class Subscription(Base):
     expires_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="subscriptions")
+
+
+# =========================
+# MEETUP MEMORY TABLES
+#
+# Phase 1: data model + workflow. Raw media lives on disk/object storage and
+# is referenced via `StorageFile` / `recording_reference` — never embedded.
+# Deletion is explicit and cascading (see App/api/meetup.py): deleting an
+# event removes every derived row, including face embeddings.
+# =========================
+class Person(Base):
+    __tablename__ = "meetup_persons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    name = Column(String, nullable=False)
+    face_embedding = Column(Text, nullable=True)   # JSON float vector
+    profile_image = Column(String, nullable=True)  # storage reference
+    birthday = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    source_meetup_id = Column(Integer, nullable=True)  # plain ref: created from a meetup
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="persons")
+
+
+class Meetup(Base):
+    __tablename__ = "meetups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    person_id = Column(Integer, ForeignKey("meetup_persons.id"), nullable=True, index=True)
+    started_at = Column(DateTime, server_default=func.now())
+    ended_at = Column(DateTime, nullable=True)
+    duration_sec = Column(Integer, nullable=True)
+    # confirmed | temporary (auto-expires) | archived
+    status = Column(String, default="confirmed", index=True)
+    retention_until = Column(DateTime, nullable=True)  # temporary expiry
+    transcript = Column(Text, nullable=True)  # denormalized full text copy
+    recording_reference = Column(String, nullable=True)
+    interaction_score = Column(Float, nullable=True)
+    source = Column(String, default="manual")  # manual | auto
+    user_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="meetups")
+    person = relationship("Person", foreign_keys=[person_id])
+
+
+class ConversationSegment(Base):
+    __tablename__ = "meetup_conversation_segments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    meetup_id = Column(Integer, ForeignKey("meetups.id"), index=True, nullable=False)
+    speaker = Column(String, default="Person")
+    timestamp_sec = Column(Float, nullable=True)  # offset inside the session
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    meetup = relationship("Meetup", foreign_keys=[meetup_id])
+
+
+class MemoryFact(Base):
+    __tablename__ = "meetup_memory_facts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, ForeignKey("meetup_persons.id"), nullable=True, index=True)
+    meetup_id = Column(Integer, ForeignKey("meetups.id"), nullable=True, index=True)
+    key = Column(String, nullable=False)   # name | company | job | birthday | interests | notes ...
+    value = Column(Text, nullable=False)
+    status = Column(String, default="suggested")  # suggested | confirmed | user-edited
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    person = relationship("Person", foreign_keys=[person_id])
+
+
+class StorageFile(Base):
+    __tablename__ = "meetup_storage_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    meetup_id = Column(Integer, ForeignKey("meetups.id"), nullable=True, index=True)
+    kind = Column(String, default="video")  # video | audio | image
+    path = Column(String, nullable=False)   # local or object-storage reference
+    mime = Column(String, nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class MeetupSession(Base):
+    __tablename__ = "meetup_sessions"
+
+    # Temporary rolling interaction buffer. Nothing here is permanent — a
+    # session must be explicitly promoted (-> Meetup) or it expires.
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    person_id = Column(Integer, ForeignKey("meetup_persons.id"), nullable=True, index=True)
+    status = Column(String, default="active")  # active | staged | expired
+    started_at = Column(DateTime, server_default=func.now())
+    last_active_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    expires_at = Column(DateTime, nullable=True)
+    transcript_so_far = Column(Text, nullable=True)
+    interaction_score = Column(Float, default=0.0)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User", back_populates="meetup_sessions")
+
+    face_detections = relationship("MeetupFaceDetection", back_populates="session", cascade="all, delete-orphan")
+
+
+class MeetupFaceDetection(Base):
+    __tablename__ = "meetup_face_detections"
+
+    # A face snapshot captured during a temporary meetup session. Belongs to
+    # the session first — it only becomes a remembered person when the user
+    # explicitly saves/names it (review stage). Deleting the session removes
+    # every detection row AND its snapshot file on disk.
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("meetup_sessions.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    person_id = Column(Integer, ForeignKey("meetup_persons.id"), nullable=True, index=True)  # filled on save/recognize
+    track_id = Column(String, nullable=True)       # client-side track id
+    snapshot_path = Column(String, nullable=False) # local storage reference
+    mime = Column(String, nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    confidence = Column(Float, nullable=True)
+    quality_score = Column(Float, nullable=True)
+    first_seen_at = Column(DateTime, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    status = Column(String, default="temporary")   # temporary | ignored | saved
+    created_at = Column(DateTime, server_default=func.now())
+
+    session = relationship("MeetupSession", back_populates="face_detections")
+
+
+class MeetupSetting(Base):
+    __tablename__ = "meetup_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True)
+    recording = Column(Boolean, default=True)
+    conversation_memory = Column(Boolean, default=True)
+    face_memory = Column(Boolean, default=True)
+    auto_detect = Column(Boolean, default=True)
+    temp_buffer_sec = Column(Integer, default=20)
+    temporary_retention_days = Column(Integer, default=1)
+    saved_retention_days = Column(Integer, nullable=True)  # NULL = keep forever
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="meetup_settings")

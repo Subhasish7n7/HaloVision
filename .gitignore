@@ -7,3 +7,4 @@ App/images/
 dist/
 node_modules/
 *.log
+media/

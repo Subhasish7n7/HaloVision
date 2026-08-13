@@ -3,6 +3,7 @@ import io
 import asyncio
 import time as time_mod
 from datetime import datetime, timezone
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -10,6 +11,7 @@ load_dotenv()
 
 from fastapi import FastAPI, WebSocket, Depends, HTTPException, Header, UploadFile, File, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import logging
 import numpy as np
@@ -20,6 +22,7 @@ from App.api.database import SessionLocal, engine
 from App.api import models, schemas, auth
 from App.api.admin import admin_router
 from App.api.billing import billing_router
+from App.api.meetup import meetup_router
 from App.api import migrations
 
 from App.core.event_bus import AsyncEventBus
@@ -49,8 +52,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HaloVision API", version="1.0.0")
 
+# Media (face snapshots, recordings) lives on disk; the DB stores references.
+_media_dir = Path(__file__).resolve().parent.parent / "media"
+_media_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=_media_dir), name="media")
+
 app.include_router(admin_router)
 app.include_router(billing_router)
+app.include_router(meetup_router)
 
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(
@@ -148,6 +157,9 @@ def login(user: schemas.LoginSchema, request: Request, db: Session = Depends(get
                 "plan": existing.plan or "free",
                 "is_active": bool(existing.is_active),
                 "is_banned": bool(existing.is_banned),
+                "phone": existing.phone,
+                "address": existing.address,
+                "photo_url": existing.photo_url,
             },
         }
 
@@ -171,8 +183,53 @@ def me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
         "plan": profile.plan or "free",
         "is_active": bool(profile.is_active),
         "is_banned": bool(profile.is_banned),
+        "phone": profile.phone,
+        "address": profile.address,
+        "photo_url": profile.photo_url,
         "created_at": profile.created_at.isoformat() if profile.created_at else None,
     }
+
+@app.put("/api/auth/profile")
+def update_profile(body: schemas.ProfileUpdateSchema, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    profile = db.query(models.User).filter(models.User.id == user.get("user_id")).first()
+    if not profile:
+        raise HTTPException(status_code=401, detail="User not found")
+    if body.name is not None:
+        profile.name = body.name.strip() or profile.name
+    if body.phone is not None:
+        profile.phone = body.phone.strip() or None
+    if body.address is not None:
+        profile.address = body.address.strip() or None
+    if body.photo_url is not None:
+        profile.photo_url = body.photo_url.strip() or None
+    db.commit()
+    db.refresh(profile)
+    return {
+        "id": profile.id,
+        "name": profile.name,
+        "email": profile.email,
+        "role": profile.role or "free",
+        "plan": profile.plan or "free",
+        "is_active": bool(profile.is_active),
+        "is_banned": bool(profile.is_banned),
+        "phone": profile.phone,
+        "address": profile.address,
+        "photo_url": profile.photo_url,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+    }
+
+@app.put("/api/auth/change-password")
+def change_password(body: schemas.ChangePasswordSchema, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    profile = db.query(models.User).filter(models.User.id == user.get("user_id")).first()
+    if not profile:
+        raise HTTPException(status_code=401, detail="User not found")
+    if not auth.verify_password(body.current_password, profile.password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    profile.password = auth.hash_password(body.new_password)
+    db.commit()
+    return {"message": "Password changed successfully"}
 
 @app.get("/api/detections")
 def get_detections(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
