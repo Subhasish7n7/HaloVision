@@ -1,3 +1,27 @@
+# =============================================================================
+# FILE: App/api/admin.py
+# ROLE: Enterprise admin REST API — user management, feature flags, settings.
+#
+# WHAT THIS FILE DOES:
+#   Provides admin-only endpoints for managing the HaloVision platform:
+#   - Dashboard statistics (user counts, detection counts, server health)
+#   - User CRUD (list, view, update, delete, reset password)
+#   - Feature flag management (toggle UI features on/off)
+#   - System settings management (LLM keys, TTS config, pricing)
+#   - Activity audit log
+#
+# AUTHORIZATION:
+#   All endpoints require an admin role (checked via _current_admin dependency).
+#   Role hierarchy: super_admin > admin > moderator > support
+#   Some endpoints require specific power levels (e.g. user_delete needs power 5)
+#
+# WHO USES THIS:
+#   - Admin frontend: calls these endpoints for the admin dashboard
+#   - main.py: includes admin_router on the FastAPI app
+#
+# PREFIX: /api/admin
+# =============================================================================
+
 """Enterprise admin REST API. Requires an admin role (checked from DB, not JWT)."""
 
 import logging
@@ -17,8 +41,8 @@ admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ---------------- pydantic schemas ----------------
 
-
 class UserAdminPatch(BaseModel):
+    """Schema for PATCH /api/admin/users/{user_id}"""
     role: str = None
     plan: str = None
     is_active: bool = None
@@ -28,18 +52,20 @@ class UserAdminPatch(BaseModel):
 
 
 class FlagPatch(BaseModel):
+    """Schema for PATCH /api/admin/feature-flags/{key}"""
     key: str
     enabled: bool
 
 
 class SettingsPatch(BaseModel):
+    """Schema for PUT /api/admin/settings"""
     values: dict
 
 
 # ---------------- auth dependency ----------------
 
-
 def _db():
+    """Database session dependency."""
     db = SessionLocal()
     try:
         yield db
@@ -48,6 +74,13 @@ def _db():
 
 
 def _current_admin(authorization: str = Header(None)):
+    """Verify the request is from an admin user.
+
+    Flow:
+        Authorization header → extract JWT → verify token
+            → look up user in DB → check if role is admin
+            → return user if authorized, 403 if not
+    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
     scheme, _, token = authorization.partition(" ")
@@ -70,10 +103,13 @@ def _current_admin(authorization: str = Header(None)):
 
 
 def require_admin():
+    """Dependency factory: returns _current_admin for use with Depends()."""
     return _current_admin
 
 
 def _require_power(access_key):
+    """Dependency factory: requires a specific power level for the endpoint.
+    Used to gate admin actions (e.g. user_delete requires power 5)."""
     def dep(admin: models.User = Depends(_current_admin)):
         access = rbac.build_access(admin.role)
         if not access.get(access_key, False):
@@ -83,6 +119,7 @@ def _require_power(access_key):
 
 
 def _log(db, admin, action, target=None, detail=None):
+    """Record an admin action in the audit log."""
     db.add(models.AdminActivity(
         admin_id=admin.id,
         admin_email=admin.email,
@@ -93,10 +130,12 @@ def _log(db, admin, action, target=None, detail=None):
 
 
 def _iso(dt):
+    """Convert a datetime to ISO format string (or None)."""
     return dt.isoformat() if dt else None
 
 
 def _count_relations(db, user):
+    """Count related records for a user (for the admin user list)."""
     det = db.query(models.Detection).filter(models.Detection.user_id == user.id).count()
     sess = db.query(models.Session).filter(models.Session.user_id == user.id).count()
     alerts = db.query(models.Alert).filter(models.Alert.user_id == user.id).count()
@@ -105,6 +144,7 @@ def _count_relations(db, user):
 
 
 def _user_brief(db, u):
+    """Build a user summary dict for the admin API responses."""
     det, sess, alerts, searches = _count_relations(db, u)
     return {
         "id": u.id,
@@ -127,12 +167,13 @@ def _user_brief(db, u):
 
 # ---------------- dashboard ----------------
 
-
 @admin_router.get("/stats")
 def dashboard_stats(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Get dashboard statistics — user counts, detection counts, server health.
+    Used by the admin dashboard to display overview metrics."""
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(days=1)
 
@@ -152,6 +193,7 @@ def dashboard_stats(
     alerts_24h = db.query(models.Alert).filter(models.Alert.timestamp >= day_ago).count()
     searches_total = db.query(models.SearchQuery).count()
 
+    # Build 7-day detection chart data
     detections_7d = []
     for offset in range(6, -1, -1):
         start = (now - timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -161,6 +203,7 @@ def dashboard_stats(
         ).count()
         detections_7d.append({"date": start.strftime("%b %d"), "detections": count})
 
+    # Server health metrics (optional, requires psutil and torch)
     server = {"cpu": None, "ram": None, "gpu": None, "uptime_sec": None}
     try:
         import psutil
@@ -205,7 +248,6 @@ def dashboard_stats(
 
 # ---------------- users ----------------
 
-
 @admin_router.get("/users")
 def list_users(
     search: str = "",
@@ -217,6 +259,8 @@ def list_users(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """List users with search, filter, sort, and pagination.
+    Used by the admin user management page."""
     q = db.query(models.User)
     if search:
         like = f"%{search}%"
@@ -256,6 +300,7 @@ def get_user(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Get a single user with login history."""
     u = db.query(models.User).filter(models.User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
@@ -287,6 +332,8 @@ def update_user(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Update a user's role, plan, or status.
+    Includes safeguards: can't self-promote, can't demote the last super admin."""
     if admin.id == user_id and patch.role and rbac.role_power(patch.role) > rbac.role_power(admin.role):
         raise HTTPException(status_code=403, detail="Cannot self-promote")
 
@@ -322,6 +369,7 @@ def delete_user(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Delete a user. Can't delete yourself or a super admin."""
     if admin.id == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     u = db.query(models.User).filter(models.User.id == user_id).first()
@@ -342,6 +390,7 @@ def reset_password(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Reset a user's password to a random temporary password."""
     import secrets
     u = db.query(models.User).filter(models.User.id == user_id).first()
     if not u:
@@ -356,12 +405,12 @@ def reset_password(
 
 # ---------------- feature flags / settings ----------------
 
-
 @admin_router.get("/feature-flags")
 def list_flags(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """List all feature flags with their current state."""
     flags = db.query(models.FeatureFlag).order_by(models.FeatureFlag.category, models.FeatureFlag.key).all()
     return [
         {"key": f.key, "label": f.label, "category": f.category, "enabled": bool(f.enabled)}
@@ -376,6 +425,7 @@ def set_flag(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Toggle a feature flag on/off. Changes take effect immediately."""
     flag = db.query(models.FeatureFlag).filter(models.FeatureFlag.key == key).first()
     if not flag:
         raise HTTPException(status_code=404, detail="Flag not found")
@@ -391,6 +441,7 @@ def get_settings(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """List all system settings. Secrets are masked in the response."""
     settings = db.query(models.SystemSetting).all()
     return {
         "settings": [
@@ -410,6 +461,7 @@ def put_settings(
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Update system settings. Secret fields are not overwritten with masked values."""
     updated = []
     for key, value in (body.values or {}).items():
         existing = db.query(models.SystemSetting).filter(models.SystemSetting.key == key).first()
@@ -427,13 +479,13 @@ def put_settings(
 
 # ---------------- activity log ----------------
 
-
 @admin_router.get("/activity")
 def activity(
     limit: int = 50,
     admin: models.User = Depends(require_admin()),
     db=Depends(_db),
 ):
+    """Get the admin activity audit log."""
     rows = db.query(models.AdminActivity).order_by(models.AdminActivity.timestamp.desc()).limit(min(limit, 200)).all()
     return {
         "activities": [

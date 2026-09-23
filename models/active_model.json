@@ -1,0 +1,9 @@
+{
+  "active_model": "yolo26_halovision_v2",
+  "checkpoint": "models/yolo26_halovision_v2/best.pt",
+  "fallback_model": "yolo26m",
+  "fallback_checkpoint": "models/original/yolo26m_original.pt",
+  "switch_date": "pending_training",
+  "switch_reason": "80 COCO + 15 HaloVision accessibility classes",
+  "rollback_available": true
+}

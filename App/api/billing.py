@@ -1,3 +1,36 @@
+# =============================================================================
+# FILE: App/api/billing.py
+# ROLE: Subscription & billing API — plan management and payment processing.
+#
+# WHAT THIS FILE DOES:
+#   Provides subscription management endpoints:
+#   - Public plan catalog (pricing info)
+#   - Checkout flow (creates Razorpay order or simulated payment)
+#   - Payment verification (Razorpay signature check)
+#   - Subscription status
+#
+# PAYMENT FLOW:
+#   1. Frontend calls POST /api/pricing/checkout with plan_id
+#   2. If Razorpay is configured: creates a Razorpay order, returns order details
+#   3. Frontend completes payment on Razorpay
+#   4. Frontend calls POST /api/pricing/verify-payment with signature
+#   5. Server verifies signature, activates the plan
+#   6. If Razorpay is NOT configured: simulated checkout (instant activation)
+#
+# PLANS:
+#   - free: $0 (basic features)
+#   - pro: $5.99/mo (LLM scene descriptions)
+#   - pro_plus: $14.99/mo (advanced models, unlimited descriptions)
+#
+# WHO USES THIS:
+#   - Frontend pricing page: GET /api/pricing/plans
+#   - Frontend checkout: POST /api/pricing/checkout
+#   - Frontend payment verification: POST /api/pricing/verify-payment
+#   - main.py: includes billing_router on the FastAPI app
+#
+# PREFIX: /api
+# =============================================================================
+
 """Subscription & billing API. Plan prices are admin-editable via
 `system_settings` (plan_pro_price, plan_pro_plus_price), so UI pricing
 changes propagate instantly - no restart needed.
@@ -25,6 +58,7 @@ logger = logging.getLogger(__name__)
 
 billing_router = APIRouter(prefix="/api", tags=["billing"])
 
+# Plan definitions — prices are read from database (admin-editable)
 PLAN_IDS = ("free", "pro", "pro_plus")
 
 PLAN_META = {
@@ -50,6 +84,7 @@ PLAN_META = {
 
 
 def _db():
+    """Database session dependency."""
     db = SessionLocal()
     try:
         yield db
@@ -58,6 +93,7 @@ def _db():
 
 
 def _get_user(payload: dict, db):
+    """Look up a user from a JWT payload."""
     uid = payload.get("user_id")
     if uid is None:
         return None
@@ -65,33 +101,40 @@ def _get_user(payload: dict, db):
 
 
 def _setting_val(db, key, default):
+    """Read a numeric system setting from the database."""
     row = db.query(models.SystemSetting).filter(models.SystemSetting.key == key).first()
     return float(row.value) if row and row.value else default
 
 
 def _setting_str(db, key, default=""):
+    """Read a string system setting from the database."""
     row = db.query(models.SystemSetting).filter(models.SystemSetting.key == key).first()
     return row.value if row and row.value else default
 
 
 def _iso(dt):
+    """Convert a datetime to ISO format string (or None)."""
     return dt.isoformat() if dt else None
 
 
 # ---------------- Razorpay helpers ----------------
 
 def _razorpay_config(db):
+    """Get Razorpay API credentials from system settings."""
     key_id = _setting_str(db, "razorpay_key_id")
     key_secret = _setting_str(db, "razorpay_key_secret")
     return key_id, key_secret
 
 
 def _razorpay_enabled(db):
+    """Check if Razorpay is configured (both key_id and key_secret present)."""
     key_id, key_secret = _razorpay_config(db)
     return bool(key_id and key_secret)
 
 
 def _razorpay_order(db, plan_id, user):
+    """Create a Razorpay order for the given plan.
+    Returns the order response dict or None on failure."""
     key_id, key_secret = _razorpay_config(db)
     if not (key_id and key_secret):
         return None
@@ -123,6 +166,8 @@ def _razorpay_order(db, plan_id, user):
 
 
 def _verify_razorpay_signature(key_secret, order_id, payment_id, signature):
+    """Verify the Razorpay payment signature using HMAC-SHA256.
+    This ensures the payment was actually processed by Razorpay."""
     expected = hmac.new(
         key_secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
     ).hexdigest()
@@ -130,7 +175,14 @@ def _verify_razorpay_signature(key_secret, order_id, payment_id, signature):
 
 
 def _activate_plan(db, user, plan_id, payment_method="checkout", payment_id=None, receipt=None, amount=None):
-    """Shared activation: sets user.plan + role, writes the Subscription row."""
+    """Activate a subscription plan for a user.
+
+    Flow:
+        1. Set user.plan and user.plan_expires_at (30 days from now)
+        2. Mark any existing active subscriptions as "upgraded"
+        3. Create a new Subscription row
+        4. Commit to database
+    """
     now = datetime.now(timezone.utc)
     expires = now + timedelta(days=30)
     meta = PLAN_META[plan_id]
@@ -138,6 +190,7 @@ def _activate_plan(db, user, plan_id, payment_method="checkout", payment_id=None
     user.plan = plan_id
     user.plan_expires_at = expires
 
+    # Mark existing active subscriptions as upgraded
     for sub in db.query(models.Subscription).filter(
         models.Subscription.user_id == user.id,
         models.Subscription.status == "active",
@@ -170,6 +223,8 @@ def _activate_plan(db, user, plan_id, payment_method="checkout", payment_id=None
 
 @billing_router.get("/pricing/plans", tags=["pricing"])
 def pricing_plans(db=Depends(_db)):
+    """Get all available plans with current pricing.
+    Prices are read from the database (admin-editable)."""
     plans = {}
     for pid, meta in PLAN_META.items():
         price = _setting_val(db, meta["price_key"], meta["default_price"])
@@ -185,6 +240,7 @@ def pricing_plans(db=Depends(_db)):
 
 @billing_router.get("/pricing/plan/{plan_id}", tags=["pricing"])
 def pricing_plan(plan_id: str, db=Depends(_db)):
+    """Get a single plan's details."""
     if plan_id not in PLAN_META:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Unknown plan")
@@ -201,6 +257,7 @@ def pricing_plan(plan_id: str, db=Depends(_db)):
 # ------------ auth-gated subscription endpoints ------------
 
 def _require_user(authorization: str = Header(None)):
+    """Verify JWT token and return the payload."""
     if not authorization:
         from fastapi import HTTPException
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -222,6 +279,7 @@ def my_subscription(
     token: dict = Depends(_current_user),
     db=Depends(_db),
 ):
+    """Get the current user's subscription status."""
     user = db.query(models.User).filter(models.User.id == token.get("user_id")).first()
     if not user:
         raise HTTPException(401, "User not found") from None
@@ -241,6 +299,7 @@ def my_subscription(
 
 
 class CheckoutSchema(BaseModel):
+    """Request body for POST /api/pricing/checkout"""
     plan_id: str
 
 
@@ -250,6 +309,15 @@ def checkout(
     token: dict = Depends(_current_user),
     db=Depends(_db),
 ):
+    """Initiate a subscription checkout.
+
+    Flow:
+        1. If plan is "free": cancel subscription immediately
+        2. If Razorpay is configured: create order, return order details
+        3. If Razorpay is NOT configured: simulated checkout (instant)
+
+    The frontend handles the actual payment flow (Razorpay SDK).
+    """
     plan_id = body.plan_id.lower()
     if plan_id not in PLAN_META:
         raise HTTPException(status_code=404, detail="Unknown plan")
@@ -260,6 +328,7 @@ def checkout(
 
     now = datetime.now(timezone.utc)
 
+    # Cancel subscription (downgrade to free)
     if plan_id == "free":
         user.plan = "free"
         if user.role not in rbac.ADMIN_ROLES:
@@ -275,8 +344,7 @@ def checkout(
         _record_admin_activity(db, user, "subscription.cancel", f"user#{user.id}", "plan=free")
         return {"message": "Subscription cancelled", "plan": "free"}
 
-    # Real Razorpay path - create the order first; plan activates only after
-    # the payment signature is verified in /pricing/verify.
+    # Real Razorpay path
     if _razorpay_enabled(db):
         order = _razorpay_order(db, plan_id, user)
         if not order:
@@ -292,7 +360,7 @@ def checkout(
             },
         }
 
-    # Fallback: simulated checkout (no keys configured).
+    # Simulated checkout (no Razorpay keys configured)
     meta = PLAN_META[plan_id]
     sub = _activate_plan(db, user, plan_id, payment_method="simulated")
     _record_admin_activity(db, user, "subscription.activate", f"user#{user.id}", f"plan={plan_id}")
@@ -307,6 +375,7 @@ def checkout(
 
 
 class VerifyPaymentSchema(BaseModel):
+    """Request body for POST /api/pricing/verify-payment"""
     plan_id: str
     order_id: str
     payment_id: str
@@ -319,6 +388,13 @@ def verify_payment(
     token: dict = Depends(_current_user),
     db=Depends(_db),
 ):
+    """Verify a Razorpay payment and activate the subscription.
+
+    Flow:
+        1. Verify the payment signature (HMAC-SHA256)
+        2. If valid: activate the plan
+        3. If invalid: reject with 400 error
+    """
     plan_id = body.plan_id.lower()
     if plan_id not in PLAN_META:
         raise HTTPException(status_code=404, detail="Unknown plan")
@@ -355,6 +431,7 @@ def verify_payment(
 
 
 def _record_admin_activity(db, user, action, target, detail):
+    """Record an admin activity for audit purposes."""
     try:
         db.add(models.AdminActivity(
             admin_id=user.id,

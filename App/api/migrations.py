@@ -1,3 +1,30 @@
+# =============================================================================
+# FILE: App/api/migrations.py
+# ROLE: Idempotent startup migrations — schema changes and data seeding.
+#
+# WHAT THIS FILE DOES:
+#   Runs on every server startup to:
+#   1. Add missing columns to existing tables (ALTER TABLE ADD COLUMN IF NOT EXISTS)
+#   2. Create any new tables (idempotent create_all)
+#   3. Seed default feature flags
+#   4. Seed default system settings
+#   5. Seed the initial super admin account
+#
+# WHY THIS EXISTS:
+#   SQLAlchemy's create_all() can CREATE new tables but can't ADD columns
+#   to existing tables. This module handles schema evolution by issuing
+#   ALTER TABLE statements that are safe to run multiple times.
+#
+# WHO CALLS THIS:
+#   main.py calls migrations.run_migrations() at startup (before the server
+#   starts accepting requests).
+#
+# SEED DATA:
+#   - Feature flags: UI toggles, speech settings, platform features
+#   - System settings: LLM config, TTS config, pricing, payment keys
+#   - Initial admin: admin@halovision.local / Admin@12345
+# =============================================================================
+
 """Lightweight idempotent migrations for the enterprise admin tables.
 
 `create_all` cannot add columns to the existing `users` table, so we issue
@@ -5,6 +32,7 @@
 the new tables and seed defaults (super admin + feature flags).
 """
 import logging
+import os
 
 from sqlalchemy import text
 
@@ -13,6 +41,7 @@ from App.api import models
 
 logger = logging.getLogger(__name__)
 
+# Columns to add to the existing users table (if missing)
 _USER_COLUMNS = [
     ("role", "VARCHAR DEFAULT 'free'"),
     ("plan", "VARCHAR DEFAULT 'free'"),
@@ -27,11 +56,14 @@ _USER_COLUMNS = [
     ("photo_url", "TEXT"),
 ]
 
+# Columns to add to the existing subscriptions table (if missing)
 _SUBSCRIPTION_COLUMNS = [
     ("payment_id", "VARCHAR"),
     ("receipt", "VARCHAR"),
 ]
 
+# Default feature flags — seeded on first run
+# (key, category, label, default_enabled)
 _DEFAULT_FLAGS = [
     ("ai_search", "features", "AI Search", True),
     ("scene_description", "features", "Scene Description", True),
@@ -57,24 +89,40 @@ _DEFAULT_FLAGS = [
     ("show_landmarks", "ui", "Hand Landmarks", False),
 ]
 
-_INITIAL_ADMIN = ("Halo Admin", "admin@halovision.local", "Admin@12345")
+# Initial super admin credentials (created on first run only)
+# Password must be provided via environment variable in production.
+_INITIAL_ADMIN_NAME = os.getenv("ADMIN_NAME", "Halo Admin")
+_INITIAL_ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@halovision.local")
+_INITIAL_ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 
 def run_migrations():
+    """Run all idempotent migrations on startup.
+
+    Flow:
+        1. ALTER TABLE users ADD COLUMN IF NOT EXISTS (for each missing column)
+        2. ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS
+        3. CREATE TABLE IF NOT EXISTS (for all ORM models)
+        4. Seed default feature flags
+        5. Seed default system settings
+        6. Seed initial super admin account
+    """
     with engine.begin() as conn:
+        # Add missing columns to users table
         for col, ddl in _USER_COLUMNS:
             conn.execute(
                 text(f'ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {ddl}')
             )
+        # Add missing columns to subscriptions table
         for col, ddl in _SUBSCRIPTION_COLUMNS:
             conn.execute(
                 text(f'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS {col} {ddl}')
             )
 
-    # Create any missing tables (idempotent).
+    # Create any missing tables (idempotent — safe to run multiple times)
     models.Base.metadata.create_all(bind=engine)
 
-    # Seed default feature flags.
+    # Seed default data
     try:
         _seed_flags()
         _seed_settings()
@@ -86,6 +134,7 @@ def run_migrations():
 
 
 def _seed_flags(engine=engine):
+    """Insert default feature flags (only if they don't already exist)."""
     from App.api.database import SessionLocal
     db = SessionLocal()
     try:
@@ -99,6 +148,8 @@ def _seed_flags(engine=engine):
 
 
 def _seed_settings(engine=engine):
+    """Insert default system settings (only if they don't already exist).
+    These settings are admin-editable at runtime via the admin panel."""
     from App.api.database import SessionLocal
     db = SessionLocal()
     try:
@@ -139,17 +190,25 @@ def _seed_settings(engine=engine):
 
 
 def _seed_admin():
+    """Create the initial super admin account (only if it doesn't exist).
+    Credentials come from environment variables: ADMIN_EMAIL / ADMIN_PASSWORD."""
     from passlib.context import CryptContext
     from App.api.database import SessionLocal
     db = SessionLocal()
     try:
-        existing = db.query(models.User).filter(models.User.email == _INITIAL_ADMIN[1]).first()
+        existing = db.query(models.User).filter(models.User.email == _INITIAL_ADMIN_EMAIL).first()
         if not existing:
+            if not _INITIAL_ADMIN_PASSWORD:
+                logger.warning(
+                    "ADMIN_PASSWORD not set — skipping initial admin seed. "
+                    "Set ADMIN_PASSWORD env var and restart to create the admin account."
+                )
+                return
             pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
             db.add(models.User(
-                name=_INITIAL_ADMIN[0],
-                email=_INITIAL_ADMIN[1],
-                password=pwd.hash(_INITIAL_ADMIN[2]),
+                name=_INITIAL_ADMIN_NAME,
+                email=_INITIAL_ADMIN_EMAIL,
+                password=pwd.hash(_INITIAL_ADMIN_PASSWORD),
                 role="super_admin",
                 plan="enterprise",
                 is_active=True,

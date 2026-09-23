@@ -62,9 +62,7 @@ def main():
 
     # ---------------- DETECTION ----------------
     import os
-    tracker_yaml = os.path.join(
-        os.path.dirname(__file__), "App", "Perception", "bytetrack_hv.yaml"
-    )
+    tracker_yaml = os.path.join(os.path.dirname(__file__), "App", "Perception", "bytetrack_hv.yaml")
 
     for imgsz in (640, 480):
         m = YOLO("yolov8n.pt")
