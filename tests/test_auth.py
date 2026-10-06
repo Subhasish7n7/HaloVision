@@ -1,7 +1,5 @@
 """Unit tests for authentication utilities (JWT + password hashing)."""
 import os
-import time
-import pytest
 from datetime import datetime, timedelta, timezone
 
 # Set test environment before importing app modules
@@ -15,7 +13,6 @@ from App.api.auth import (
     verify_token,
     SECRET_KEY,
     ALGORITHM,
-    TOKEN_EXPIRE_HOURS,
 )
 from jose import jwt
 

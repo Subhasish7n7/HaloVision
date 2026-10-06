@@ -3,7 +3,6 @@ import asyncio
 import tempfile
 import logging
 import platform
-import threading
 
 logger = logging.getLogger(__name__)
 

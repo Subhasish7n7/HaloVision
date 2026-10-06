@@ -9,10 +9,9 @@ Safety principle: when uncertain, report UNCERTAIN — never assume CLEAR.
 """
 
 import logging
-from typing import Dict, List, Tuple, Optional
+from typing import Tuple, Optional
 
 from App.core.contracts import ObjectData, TrackingState
-from App.core.safety import DEPTH_VERY_CLOSE, DEPTH_NEAR
 
 logger = logging.getLogger(__name__)
 

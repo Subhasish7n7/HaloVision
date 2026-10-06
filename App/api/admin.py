@@ -30,7 +30,6 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from App.api.database import SessionLocal
 from App.api import models, auth, rbac

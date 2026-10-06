@@ -1,8 +1,9 @@
 {
   "model_version": "halovision_v2",
-  "base_model": "yolo26s",
-  "base_checkpoint": "yolo26s.pt",
+  "base_model": "yolo26n",
+  "base_checkpoint": "yolo26n.pt",
   "dataset_version": "halovision_v2",
+  "_legacy_keys_note": "dataset_yaml/output_dir replaced by *_ref keys pointing at HALOVISION_DATA_DIR (D:); original model files on C: are never written",
   "dataset_yaml": "ml/training/datasets/halovision_v2/halovision_v2.yaml",
   "output_dir": "models/yolo26_halovision_v2",
   "training_config": {
@@ -27,7 +28,8 @@
     "save_period": 10,
     "freeze": 0,
     "exist_ok": true,
-    "pretrained": true
+    "pretrained": true,
+    "device_note": "train_halovision.py auto-selects cuda:0 when available, else cpu"
   },
   "transfer_learning": {
     "strategy": "freeze_backbone_then_finetune",

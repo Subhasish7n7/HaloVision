@@ -10,8 +10,6 @@ Downloads to: ml/training/datasets/halovision_v2/sources/roboflow/
 
 import os
 import sys
-import urllib.request
-import zipfile
 import json
 from pathlib import Path
 

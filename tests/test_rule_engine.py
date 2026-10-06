@@ -1,6 +1,5 @@
 """Unit tests for rule engine command parsing and path analyzer."""
 import os
-import sys
 import pytest
 
 # Set test environment

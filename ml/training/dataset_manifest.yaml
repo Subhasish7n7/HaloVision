@@ -1,542 +1,383 @@
-# HaloVision v2 Dataset Acquisition Manifest
-# Generated: 2026-09-23
-# Status: PLANNING - No downloads yet
+# HaloVision YOLO26 Dataset Acquisition Manifest
+# Restarted workflow — Stage 1 deliverable
+# Updated: 2026-09-24
+# Storage root: D:\HaloVisionData  (env: HALOVISION_DATA_DIR)
+# Status values: pending | downloading | downloaded | converting | converted | validated | failed | gap_custom_required
 
-# ============================================================
-# SECTION 1: CONFIRMED COCO CLASS MAPPING
-# ============================================================
-# Source: yolo26m.pt (Ultralytics 8.4.158)
-# Verified: Model classes 0-79 match halovision_v2.yaml exactly
-# No mismatches found.
+version: 2
+dataset_name: halovision_v2
+storage:
+  data_dir_env: HALOVISION_DATA_DIR
+  data_dir_default: "D:/HaloVisionData"
+  datasets: "D:/HaloVisionData/datasets"
+  downloads: "D:/HaloVisionData/downloads"
+  models: "D:/HaloVisionData/models"
+  runs: "D:/HaloVisionData/runs"
+  cache: "D:/HaloVisionData/cache"
 
-coco_classes:
-  count: 80
-  source: "yolo26m.pt pretrained on COCO"
-  verification: "CONFIRMED - all 80 classes match YAML"
-  ids: "0-79 (standard COCO order)"
+# ---------------------------------------------------------------------------
+# FINAL CLASS MAPPING (95 classes) — IDs are FROZEN. Do not change.
+# Verified 2026-09-24: existing halovision_v2.yaml 0-79 names match the
+# standard COCO-to-YOLO 80-class order exactly (person=0 ... toothbrush=79),
+# derived from instances_train2017.json categories sorted by COCO category id
+# (sparse ids 1..90, 80 valid) mapped in order to 0..79. No discrepancy found.
+# ---------------------------------------------------------------------------
+class_mapping:
+  coco_baseline:
+    range: "0-79"
+    count: 80
+    mapping_rule: "sorted(instances*.json categories by COCO id) -> index 0..79"
+    verified: true
+    verified_on: "2026-09-24"
+    verified_against:
+      - "ml/training/datasets/halovision_v2/halovision_v2.yaml"
+      - "sources/coco2017/annotations/instances_train2017.json (80 categories, ids 1..90 sparse)"
+      - "sampled 30000 converted labels: class ids only 0..79, 0 malformed lines"
+  new_classes:
+    80: wheelchair
+    81: white_cane
+    82: crutches
+    83: guide_dog
+    84: crosswalk
+    85: curb
+    86: pothole
+    87: stairs
+    88: escalator
+    89: elevator
+    90: door
+    91: entrance
+    92: exit
+    93: bollard
+    94: road_barrier
+  renames_applied:
+    walking_cane: white_cane
+    staircase: stairs
+  annotation_definitions:
+    white_cane: >
+      Only mobility/white canes used by blind or low-vision people for
+      navigation may be labeled. Do NOT label random sticks, hiking poles,
+      umbrellas, walking sticks, brooms, or other long thin objects.
+    stairs: >
+      A fixed flight of steps (indoor or outdoor). Label the whole step
+      flight as one box. Keep strictly separate from escalators (88) and
+      elevators (89). Do not label a single step, a ladder, or a ramp.
+    guide_dog: >
+      A dog wearing a harness/vesti indicating guide/mobility-assist role.
+      Plain pet dogs are class 16 (dog), not guide_dog.
+    entrance: >
+      An identifiable building/room entrance (doorway or open entry point
+      viewed as a passage into a structure). Distinct from door (90, the
+      physical door panel/leaf) and exit (92, egress signage/doorway).
+    exit: >
+      Egress doorway or EXIT-sign-marked opening. Distinct from entrance (91).
+    crosswalk: >
+      Marked pedestrian crossing on a road (zebra stripes or painted lines).
+    curb: >
+      Raised road-edge kerb/curb line separating road from pavement.
+    bollard: >
+      Short, sturdy, vertical posts used to control traffic/guard pedestrians.
+    road_barrier: >
+      Horizontal/temporary barrier across or along a road (guard rail,
+      temporary construction barrier, crossing gate arm). Distinct from
+      bollard (93, free-standing vertical post).
 
-# ============================================================
-# SECTION 2: PROPOSED NEW CLASS MAPPING
-# ============================================================
-# 15 new classes, IDs 80-94
-# All COCO class IDs 0-79 remain UNCHANGED
+# ---------------------------------------------------------------------------
+# SOURCES
+# ---------------------------------------------------------------------------
+sources:
 
-new_classes:
-  80: wheelchair
-  81: walking_cane
-  82: crutches
-  83: guide_dog
-  84: crosswalk
-  85: curb
-  86: pothole
-  87: staircase
-  88: escalator
-  89: elevator
-  90: door
-  91: entrance
-  92: exit
-  93: bollard
-  94: road_barrier
-
-# ============================================================
-# SECTION 3: CLASS AMBIGUITY ANALYSIS
-# ============================================================
-
-ambiguity_issues:
-  - id: 87
-    class: staircase
-    issue: "Open Images V7 has 'Stairs' (ID 489), not 'staircase'"
-    resolution: "RENAME to 'stairs' for consistency with Open Images V7"
-    action_required: true
-
-  - id: 81
-    class: walking_cane
-    issue: "Open Images V7 has no 'walking cane' class. Roboflow has 'white_cane' datasets."
-    resolution: "RENAME to 'white_cane' to match available dataset terminology"
-    action_required: true
-
-  - id: 83
-    class: guide_dog
-    issue: "No public dataset specifically for guide dogs. COCO has 'dog' (16). Guide dogs wear harnesses/vests."
-    resolution: "Keep as 'guide_dog'. Custom phone-camera images STRONGLY recommended. Must distinguish from ordinary dogs."
-    action_required: false
-    definition: "A dog wearing a harness, vest, or leading a person. NOT just any dog."
-
-  - id: 90
-    class: door
-    issue: "Open Images V7 has 'Door' (164). But 'door' vs 'entrance' can be ambiguous."
-    resolution: "Keep as 'door'. Define: physical door panel/gate. NOT entrance/exit signage."
-    action_required: false
-    definition: "The physical door panel, gate, or entryway structure itself."
-
-  - id: 91
-    class: entrance
-    issue: "No direct Open Images V7 match. Visually similar to 'door' and 'exit'."
-    resolution: "Keep as 'entrance'. Custom phone-camera images required. Must show entrance signage or architectural cues."
-    action_required: false
-    definition: "An entrance marked by signage, archway, or architectural features indicating entry point."
-
-  - id: 92
-    class: exit
-    issue: "No direct Open Images V7 match. Visually similar to 'entrance'."
-    resolution: "Keep as 'exit'. Custom phone-camera images required. Must show exit signage."
-    action_required: false
-    definition: "An exit marked by EXIT signage, emergency exit features, or architectural cues."
-
-  - id: 84
-    class: crosswalk
-    issue: "Open Images V7 has no 'crosswalk'. Roboflow has crosswalk datasets. Ambiguity: crosswalk markings vs entire pedestrian crossing area."
-    resolution: "Keep as 'crosswalk'. Define: painted crosswalk markings on road surface."
-    action_required: false
-    definition: "The painted zebra stripes or crosswalk markings on the road surface."
-
-  - id: 93
-    class: bollard
-    issue: "Open Images V7 has no 'bollard'. Roboflow has bollard datasets. Overlaps with 'road_barrier'."
-    resolution: "Keep as 'bollard'. Define: short vertical post. 'road_barrier' is larger horizontal barrier."
-    action_required: false
-    definition: "A short, sturdy vertical post (metal/concrete) used to control traffic or protect pedestrians."
-
-  - id: 94
-    class: road_barrier
-    issue: "Open Images V7 has no 'road_barrier'. Overlaps with 'bollard'."
-    resolution: "Keep as 'road_barrier'. Define: larger horizontal barrier (jersey barrier, guardrail, construction barrier)."
-    action_required: false
-    definition: "A larger horizontal barrier (jersey barrier, guardrail, construction barrier, traffic cone wall)."
-
-  - id: 85
-    class: curb
-    issue: "Open Images V7 has no 'curb'. OOD dataset has curb class. Visually subtle."
-    resolution: "Keep as 'curb'. Custom phone-camera images recommended for diverse curb styles."
-    action_required: false
-    definition: "The raised edge between road and sidewalk/pavement."
-
-# ============================================================
-# SECTION 4: PER-CLASS ACQUISITION PLAN
-# ============================================================
-
-class_acquisition:
-  - id: 80
-    name: wheelchair
-    open_images_v7: true
-    open_images_id: 583
-    open_images_name: "Wheelchair"
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "MobilityAids/wheelchair-detection-hh3io"
-        images: 9210
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/mobilityaids/wheelchair-detection-hh3io"
-      - name: "detection-kgttv/wheelchair-7fzdq"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/detection-kgttv/wheelchair-7fzdq"
-    custom_images_required: false
-    target_images: 400
-    current_images: 0
-    status: "AVAILABLE - multiple sources"
-    notes: "Good coverage from Open Images + Roboflow"
-
-  - id: 81
-    name: white_cane  # RENAMED from walking_cane
-    open_images_v7: false
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "nodongjaeteam-g1pbo/white-cane-hyjat"
-        images: 9500
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/nodongjaeteam-g1pbo/white-cane-hyjat"
-      - name: "nozaki/whitecane-mzmlr"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/nozaki/whitecane-mzmlr"
-      - name: "project-4v0dw/white_cane_13"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/project-4v0dw/white_cane_13"
-    custom_images_required: false
-    target_images: 400
-    current_images: 0
-    status: "AVAILABLE - Roboflow datasets exist"
-    notes: "Renamed to 'white_cane' to match dataset terminology"
-
-  - id: 82
-    name: crutches
-    open_images_v7: true
-    open_images_id: 145
-    open_images_name: "Crutch"
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "mbdetector/mobility-aid-detector-mwxuw"
-        images: 9200
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/mbdetector/mobility-aid-detector-mwxuw"
-        classes: ["crutches", "person", "push_wheelchair", "walking_frame", "wheelchair"]
-      - name: "school-kkwau/visually_impaired"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/school-kkwau/visually_impaired"
-        classes: ["umbrella", "object", "stick", "crutch", "whiteCane"]
-    custom_images_required: false
-    target_images: 400
-    current_images: 0
-    status: "AVAILABLE - Open Images + Roboflow"
-    notes: "Open Images has singular 'Crutch'. Roboflow has 'crutches' (plural)."
-
-  - id: 83
-    name: guide_dog
-    open_images_v7: false
-    roboflow_available: false
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "CUSTOM CAPTURE REQUIRED"
+  coco2017:
+    stage: 2
+    status: downloaded_extracted          # zips verified complete + extracted on D:
+    purpose: "Baseline preservation for COCO classes 0-79 (anti-forgetting) + detection variety"
+    urls:
+      train: "https://images.cocodataset.org/zips/train2017.zip"
+      val: "https://images.cocodataset.org/zips/val2017.zip"
+      annotations: "https://images.cocodataset.org/zips/annotations_trainval2017.zip"
+    license: "COCO Terms of Use (images retain original licenses; annotations CC BY 4.0)"
+    license_url: "https://cocodataset.org/#termsofuse"
+    expected:
+      train_images: 118287
+      val_images: 5000
+      annotation_files: 6
+      download_bytes: 20405354669        # 19,336,861,798 + 815,585,330 + 252,907,541
+    archive_location: "D:/HaloVisionData/downloads/coco/"
+    archive_verified:
+      method: "zip central-directory integrity + exact entry counts"
+      verified_on: "2026-09-24"
+      train_zip_entries: 118288          # 118287 images + 1 folder entry
+      val_zip_entries: 5001
+      annotations_zip_entries: 6
+      result: PASS
+    extracted_location: "D:/HaloVisionData/datasets/coco2017/"   # moved from C: on 2026-09-24
+    extracted_counts:
+      train_images: 118287
+      val_images: 5000
+      annotation_files: 6
+    downloaded_images: 118287
+    annotation_status: complete
+    conversion_status: complete           # clean deterministic rebuild into halovision_v2 on D:
+    validation_status: passed_2026-09-26  # 0 errors in final dataset validation (report JSON)
     notes: >
-      No public dataset for guide dogs specifically. Must distinguish from ordinary dogs.
-      Guide dogs wear harnesses, vests, or lead visually impaired persons.
-      Custom phone-camera images in indoor/outdoor settings strongly recommended.
-      Consider augmenting with dog images + harness/vest annotations.
+      Never downloaded again — archives verified byte-complete via zip central
+      directory. Extracted copy moved C: -> D: on restart (2026-09-24). Prior
+      partial conversion (94,475 train images on C:, 1 missing label, 0 val, 0
+      test) is superseded by a clean deterministic rebuild on D: with proper
+      train/val/test splits. Prior partial data retained on C: only until the
+      rebuilt dataset validates, then removed (derived data, reproducible).
 
-  - id: 84
-    name: crosswalk
-    open_images_v7: false
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "esera/bollards-crosswalk-stairs"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/esera/bollards-crosswalk-stairs"
-        classes: ["crosswalk", "Bollard", "downstairs", "upstairs"]
-      - name: "new-workspace-jbi8t/cross_walk"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/new-workspace-jbi8t/cross_walk"
-    custom_images_required: false
-    target_images: 400
-    current_images: 0
-    status: "AVAILABLE - Roboflow datasets exist"
-    notes: "Multiple crosswalk datasets available. Must verify annotation quality."
-
-  - id: 85
-    name: curb
-    open_images_v7: false
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "fpn/ood-pbnro"
-        images: 10000
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/fpn/ood-pbnro"
-        classes: ["person", "car", "tree", "spherical_roadblock", "warning_column", "waste_container", "street_light", "fire_hydrant", "traffic_light", "stop_sign", "pole", "bench", "curb", "stairs", "bicycle", "motorcycle", "dog", "bus", "truck", "train", "bus_stop", "crutch"]
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "AVAILABLE - Roboflow + custom recommended"
-    notes: "OOD dataset has curb class. Visually subtle - custom phone-camera images recommended for diverse curb styles."
-
-  - id: 86
-    name: pothole
-    open_images_v7: false
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "aegis/pothole-detection-i00zy"
-        images: 1482
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/aegis/pothole-detection-i00zy"
-    custom_images_required: false
-    target_images: 400
-    current_images: 0
-    status: "AVAILABLE - Roboflow datasets exist"
-    notes: "Good pothole detection dataset available. 1482 images."
-
-  - id: 87
-    name: stairs  # RENAMED from staircase
-    open_images_v7: true
-    open_images_id: 489
-    open_images_name: "Stairs"
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "esera/bollards-crosswalk-stairs"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/esera/bollards-crosswalk-stairs"
-        classes: ["crosswalk", "Bollard", "downstairs", "upstairs"]
-      - name: "fpn/ood-pbnro"
-        images: 10000
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/fpn/ood-pbnro"
-        classes_include: "stairs"
-    custom_images_required: false
-    target_images: 400
-    current_images: 0
-    status: "AVAILABLE - Open Images + Roboflow"
-    notes: "Renamed to 'stairs' to match Open Images V7 terminology."
-
-  - id: 88
-    name: escalator
-    open_images_v7: false
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "mallescalatorsystem"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/mallescalatorsystem"
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "AVAILABLE - Roboflow + custom recommended"
-    notes: "One Roboflow dataset found. Custom phone-camera images recommended for diversity."
-
-  - id: 89
-    name: elevator
-    open_images_v7: false
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "detection-kgttv/wheelchair-7fzdq"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/detection-kgttv/wheelchair-7fzdq"
-        classes_include: "elevator"
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "AVAILABLE - Roboflow + custom recommended"
-    notes: "Found in wheelchair dataset. Custom phone-camera images recommended for elevator doors/panels."
-
-  - id: 90
-    name: door
-    open_images_v7: true
-    open_images_id: 164
-    open_images_name: "Door"
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "vision-impaired-assistance/vision-impaired-assistance"
-        images: 17073
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/vision-impaired-assistance/vision-impaired-assistance"
-        classes_include: "door"
-    custom_images_required: false
-    target_images: 400
-    current_images: 0
-    status: "AVAILABLE - Open Images + Roboflow"
-    notes: "Good coverage. Vision Impaired Assistance dataset has door class with 17k images."
-
-  - id: 91
-    name: entrance
-    open_images_v7: false
-    roboflow_available: false
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "CUSTOM CAPTURE REQUIRED"
-    notes: >
-      No public dataset specifically for 'entrance'. Must show entrance signage,
-      archway, or architectural features indicating entry point.
-      Custom phone-camera images in various building types required.
-
-  - id: 92
-    name: exit
-    open_images_v7: false
-    roboflow_available: false
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "CUSTOM CAPTURE REQUIRED"
-    notes: >
-      No public dataset specifically for 'exit'. Must show EXIT signage,
-      emergency exit features, or architectural cues.
-      Custom phone-camera images required. EXIT signs are standardized (green/white).
-
-  - id: 93
-    name: bollard
-    open_images_v7: false
-    roboflow_available: true
-    roboflow_datasets:
-      - name: "esera/bollards-crosswalk-stairs"
-        images: "unknown"
-        license: "CC BY 4.0"
-        url: "https://universe.roboflow.com/esera/bollards-crosswalk-stairs"
-        classes: ["crosswalk", "Bollard", "downstairs", "upstairs"]
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "AVAILABLE - Roboflow + custom recommended"
-    notes: "Found in bollards-crosswalk-stairs dataset. Custom images recommended for diverse bollard types."
-
-  - id: 94
-    name: road_barrier
-    open_images_v7: false
-    roboflow_available: false
-    custom_images_required: true
-    target_images: 300
-    current_images: 0
-    status: "CUSTOM CAPTURE REQUIRED"
-    notes: >
-      No specific 'road_barrier' dataset found. Different from bollard.
-      Must capture jersey barriers, guardrails, construction barriers, traffic cones.
-      Custom phone-camera images required.
-
-# ============================================================
-# SECTION 5: DATASET SOURCE SUMMARY
-# ============================================================
-
-source_summary:
   open_images_v7:
-    available_classes: 4
-    classes:
-      - {id: 80, name: "wheelchair", oid: 583}
-      - {id: 82, name: "crutches", oid: 145}
-      - {id: 87, name: "stairs", oid: 489}
-      - {id: 90, name: "door", oid: 164}
-    download_method: "Ultralytics fiftyone script or direct OID API"
-    license: "CC BY 4.0"
-    estimated_images: "500-2000 per class (filtered)"
+    stage: 3
+    status: verified_subset_download     # class verification done 2026-09-24
+    purpose: "Bounding-box data for HaloVision classes where Open Images has a matching class"
+    acquisition_method: >
+      Targeted subset only (NOT the full dataset): download class-descriptions-boxable.csv
+      + oidv6-train-annotations-bbox.csv, filter rows to target LabelNames, resolve image
+      URLs, download only matched images. No AWS/GCS full-corpus transfer.
+    urls:
+      class_descriptions: "https://storage.googleapis.com/openimages/v5/class-descriptions-boxable.csv"   # HTTP 200
+      bbox_annotations: "https://storage.googleapis.com/openimages/v6/oidv6-train-annotations-bbox.csv"    # NOTE: v5 object is 403; v6 works
+      bbox_validation: "https://storage.googleapis.com/openimages/v5/validation-annotations-bbox.csv"
+      bbox_test: "https://storage.googleapis.com/openimages/v5/test-annotations-bbox.csv"
+      images: "https://s3.amazonaws.com/open-images-dataset/{train|validation|test}/{ImageID}.jpg"  # CVDF S3 mirror (image-URL CSVs are 403)
+    license: "Open Images V7 images: CC BY 4.0 (per-image); annotations: CC BY 4.0"
+    license_url: "https://openimages.org/learn/faq/#11-how-are-the-open-images-datasets-licensed"
+    downloaded_annotation_files:
+      - {file: class-descriptions-boxable.csv, bytes: 11679, status: complete}
+      - {file: oidv6-train-annotations-bbox.csv, bytes: 2258447590, rows: 14610229, status: complete}
+      - {file: validation-annotations-bbox.csv, bytes: 25105048, rows: 303980, status: complete}
+      - {file: test-annotations-bbox.csv, bytes: 77484237, rows: 937327, status: complete}
+    class_verification:
+      method: "exact display-name match against all 601 boxable classes; case-insensitive token scan confirmed no near-misses"
+      verified_on: "2026-09-24"
+      matched: [80, 82, 87, 90]          # wheelchair, crutches, stairs, door
+      absent: [81, 83, 84, 85, 86, 88, 89, 91, 92, 93, 94]
+      absent_meaning: >-
+        white_cane, guide_dog, crosswalk, curb, pothole, escalator, elevator,
+        entrance, exit, bollard, road_barrier have NO boxable class in Open
+        Images (confirmed by scanning all 601 names: no 'cane', 'crosswalk',
+        'curb', 'pothole', 'escalator', 'elevator', 'entrance', 'exit',
+        'bollard', 'barrier', or 'guide dog' entries). These are Stage 4
+        (supplemental) / Stage 5 (custom) gaps — not force-labeled.
+    per_class:
+      "80": {name: wheelchair, oi_class: Wheelchair, label_name: "/m/0qmmr", status: matched}
+      "81": {name: white_cane, status: gap_custom_required}
+      "82": {name: crutches, oi_class: Crutch, label_name: "/m/05441v", status: matched}
+      "83": {name: guide_dog, status: gap_custom_required}
+      "84": {name: crosswalk, status: gap_custom_required}
+      "85": {name: curb, status: gap_custom_required}
+      "86": {name: pothole, status: gap_custom_required}
+      "87": {name: stairs, oi_class: Stairs, label_name: "/m/01lynh", status: matched}
+      "88": {name: escalator, status: gap_custom_required}
+      "89": {name: elevator, status: gap_custom_required}
+      "90": {name: door, oi_class: Door, label_name: "/m/02dgv", status: matched}
+      "91": {name: entrance, status: gap_custom_required}
+      "92": {name: exit, status: gap_custom_required}
+      "93": {name: bollard, status: gap_custom_required}
+      "94": {name: road_barrier, status: gap_custom_required}
+    expected:
+      class_descriptions_bytes: 11679
+      bbox_csv_bytes: 2258447590
+      images_per_class_target: "up to 600 (deterministic cap, download_open_images.py --per-class)"
+      estimated_download_gb: "0.3-0.5 subset images (S3 mirror, ~150 KB avg)"
+    target_classes: [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94]
+    downloaded_images: 1872               # 600 wheelchair + 85 crutches + 600 stairs + 600 door
+    annotation_status: complete            # open_images_filtered.csv + class map + boxes json in cache/
+    conversion_status: complete            # 1,872 images ingested by convert_new_classes.py
+    validation_status: passed_2026-09-26   # 0 errors in final dataset validation
+    notes: >
+      Class existence and meaning verified against class-descriptions-boxable.csv
+      (all 601 names scanned) — DONE 2026-09-24. 4 matched / 11 absent; absent
+      classes go to Stage 4/5 rather than being force-labeled.
 
-  roboflow_supplemental:
-    available_classes: 8
-    classes:
-      - {id: 80, name: "wheelchair", datasets: 2}
-      - {id: 81, name: "white_cane", datasets: 3}
-      - {id: 82, name: "crutches", datasets: 2}
-      - {id: 84, name: "crosswalk", datasets: 2}
-      - {id: 85, name: "curb", datasets: 1}
-      - {id: 86, name: "pothole", datasets: 1}
-      - {id: 87, name: "stairs", datasets: 2}
-      - {id: 88, name: "escalator", datasets: 1}
-      - {id: 89, name: "elevator", datasets: 1}
-      - {id: 90, name: "door", datasets: 1}
-      - {id: 93, name: "bollard", datasets: 1}
-    license: "CC BY 4.0 (verify per dataset)"
-    download_method: "Roboflow API or manual download"
+  roboflow:
+    stage: 4
+    status: complete                      # account-free HF mirrors; final ingest 2026-09-26
+    purpose: "Supplemental data for classes still lacking annotations after Open Images"
+    method: "Search + verify candidates AFTER Stage 3 gap analysis; combine only if class definitions match"
+    license_policy: "Only datasets with explicit licenses (CC BY / CC BY 4.0 / Apache / MIT / public domain)"
+    requires_account: false               # HF mirrors chosen specifically to avoid API-key dependency
+    visual_verification: >-
+      2026-09-25/26: subagent identity-protocol review of ROD + AssistEye
+      candidates (50 samples, 0 identity failures). Approvals/rejections in
+      candidate_datasets below and in hf_provenance.md.
+    note_location: >-
+      Despite the historical 'roboflow' key name, Stage 4 now uses account-free
+      Hugging Face mirrors of explicitly-licensed datasets; the original
+      Roboflow Universe exports (which would need an API key) were NOT used.
+    candidate_datasets:
+      - name: crosswalk_cdset3434
+        status: accepted_downloading
+        class: "84 crosswalk"
+        source: "https://huggingface.co/datasets/zzd0225/crosswalk-detection-dataset (CDSet-3434, Zenodo DOI 10.5281/zenodo.8289874)"
+        license: "Apache-2.0"
+        images: 3434
+        meaning_check: >-
+          Vehicle-camera zebra-crossing images; two bbox classes (crosswalk,
+          guide arrows). ONLY the crosswalk class maps to our 84; guide-arrow
+          images are skipped as no-mapped-class.
+        quality_check: "Published with CDNet paper (Neural Comput. Appl. 2022); train/test split provided; bbox labels inspected after extraction"
+        download_bytes: 3304400079
+      - name: rdd2022_road_damage
+        status: accepted_downloaded
+        class: "86 pothole"
+        source: "https://huggingface.co/datasets/akiii1234/RoadDamageDetection (derived from RDD2022 / CRDDC 2022)"
+        license: "CC BY-SA 4.0"
+        images: ~47000                    # full RDD2022-derived; only D40/pothole-labeled images kept
+        meaning_check: >-
+          RDD2022 damage classes D00/D10/D20 (cracks) + D40 (pothole).
+          Only D40/pothole maps to our 86; crack-only images are skipped.
+        quality_check: "CRDDC 2022 challenge dataset, YOLO labels; label sample inspected after extraction"
+        download_bytes: 8974467909
+      - name: hf_rod
+        status: accepted_downloaded_ingested
+        class: "84 crosswalk, 87 stairs, 94 road_barrier"
+        source: "https://huggingface.co/datasets/Abtinzandi/Obstacle-Detection-Dataset-YOLO (ROD)"
+        revision: "add28c7f4573fff2bdb30df0c7b60495473fb026"   # pinned for reproducibility
+        license: "MIT"
+        citation: "zandi2026rod"           # bibtex in hf_provenance.md (final report)
+        images: "5399 selected (target-class splits); 4158 ingested after mapping + dedup"
+        ingested_2026-09-26: "hf_rod {4 Stairs->87, 14 Ped crosswalk->84, 18 Traffic Cone->94, 20 Teraffic Barrel->94}"
+        meaning_check: >-
+          25-class obstacle dataset (Amirkabir University; Roboflow Universe
+          aggregation + in-house CVAT capture). Only 4 verified classes mapped;
+          13 Guard rail EXCLUDED (visual verification: ~33% wrong labels).
+        quality_check: >-
+          Visual verification by subagents under identity protocol: barrel 6/6
+          tight, cone 6/6 genuine, stairs 6/6 contract-OK, crosswalk 5/6 tight
+          (1 watermark wrong -> kept only if boxes valid, watermark flagged).
+        download_bytes: 6160000000         # selective patterns: labels + target-class images only
+      - name: hf_assisteye
+        status: accepted_downloaded_ingested
+        class: "86 pothole"
+        source: "https://huggingface.co/datasets/Dderedor/obstacles_on_the_road (Unified Obstacles, github.com/H1merka/assist-eye)"
+        revision: "319fa39fdc955ac86ff99a80a0495bcdd63634b1"   # pinned for reproducibility
+        license: "MIT"
+        images: "2894 downloaded; 292 ingested (pothole-only; others unmapped)"
+        ingested_2026-09-26: "hf_assisteye {3 pothole->86}; 7 pole REJECTED (verification failed: 7/12 were streetlights/utility poles, not bollards)"
+        meaning_check: "8 local classes; only pothole(3) has an exact-name match in the 95-class scheme"
+        quality_check: "Visual verification: 6 GOOD / 6 LOOSE / 0 WRONG on pothole samples"
+        download_bytes: 780000000
+    rejected_candidates:
+      - {name: mabughali/miia-pothole-train, license: Apache-2.0, reason: "classification labels only, no bounding boxes"}
+      - {name: Nielbagz/Bollard, reason: "empty repository (0 bytes)"}
+      - {name: kjunh/GuideDog, license: CC-BY-NC-4.0, reason: "image-to-text VQA, no boxes; NC license unsuitable"}
+      - {name: keremberke/pothole-segmentation, reason: "90 images, segmentation masks only, tiny"}
+      - {name: Mobiusi/Electric-Wheelchair-*, license: CC-BY-NC-SA-4.0, reason: "NC license; wheelchair already covered by Open Images"}
+      - {name: "ROD class 13 Guard rail", license: MIT, reason: "label noise: visual verification found ~33% wrong labels; class not ingested"}
+      - {name: "AssistEye class 7 pole", license: MIT, reason: "verification failed: 7/12 samples were streetlights/utility poles, not bollards"}
+    no_account_free_source_found:
+      # searched HF on 2026-09-24: no bbox dataset exists for these classes
+      - {id: 81, name: white_cane, searched: "white cane / blind mobility"}
+      - {id: 83, name: guide_dog, searched: "guide dog (only VQA/NC datasets exist)"}
+      - {id: 85, name: curb, searched: "curb / kerb detection"}
+      - {id: 88, name: escalator, searched: "escalator detection"}
+      - {id: 89, name: elevator, searched: "elevator (robotics datasets only)"}
+      - {id: 91, name: entrance, searched: "entrance detection"}
+      - {id: 92, name: exit, searched: "exit sign detection"}
+      - {id: 93, name: bollard, searched: "bollard (only empty repo); 2026-09-26 AssistEye 'pole' candidate REJECTED by visual verification (58% streetlights)"}
+      - {id: 94, name: road_barrier, searched: "traffic barrier -> RESOLVED 2026-09-26 via ROD Traffic Cone + Teraffic Barrel (MIT), see hf_rod entry"}
+      disposition: "require custom phone-camera captures (Stage 5)"   # applies to 81/83/85/88/89/91/92/93
+    downloaded_images: "see candidate_datasets (CDSet 3434, RDD subset, ROD 5399 selected, AssistEye 2894)"
+    annotation_status: complete           # converted by convert_new_classes.py incl. ingest_hf 2026-09-26
+    conversion_status: complete
+    validation_status: passed_2026-09-26  # final validate_dataset.py run: 0 criticals (report JSON)
+    notes: Prior plan's Roboflow Universe URLs need an API key -> replaced with
+           verified account-free HF mirrors of explicitly licensed datasets.
 
-  custom_capture_required:
-    classes: 5
-    classes_list:
-      - {id: 83, name: "guide_dog", reason: "No public dataset; must distinguish from ordinary dogs"}
-      - {id: 91, name: "entrance", reason: "No public dataset; context-dependent architectural feature"}
-      - {id: 92, name: "exit", reason: "No public dataset; must show EXIT signage"}
-      - {id: 94, name: "road_barrier", reason: "No public dataset; various barrier types"}
-      - {id: 85, name: "curb", reason: "OOD dataset exists but custom images recommended for diversity"}
-    min_images_per_class: 50
-    target_images_per_class: 300
-    capture_requirements:
-      device: "Mobile phone camera"
-      conditions: ["indoor", "outdoor", "day", "night", "various angles", "various distances"]
-      annotations: "LabelImg or CVAT in YOLO format"
+  custom_phone:
+    stage: 5
+    status: structure_created_pending_manual_collection
+    purpose: "Gap-filling images captured under realistic HaloVision conditions"
+    location: "D:/HaloVisionData/datasets/custom/"
+    structure_created: "2026-09-24 — 15 class dirs with images/, labels/, COLLECTION_GUIDE.md"
+    license: "Project-owned (captured in-house); model/people releases are user's responsibility"
+    gap_classes_after_stages_3_4: [81, 83, 85, 88, 89, 91, 92, 93, 94]   # white_cane, guide_dog, curb, escalator, elevator, entrance, exit, bollard, road_barrier
+    covered_by_external_data: [80, 82, 84, 86, 87, 90]                    # wheelchair, crutches, crosswalk, pothole, stairs, door
+    gap_classes_final_2026-09-26: [81, 83, 89, 91, 92, 93]                # after HF stage: 85/88 covered by user folders, 94 by ROD barrel+cone
+    requirements:
+      min_images_per_gap_class: 50
+      target_images_per_gap_class: 150
+      conditions: [phone camera, varied distance, varied angle, indoor, outdoor,
+                   daylight, low light, partial occlusion, clutter, varied backgrounds,
+                   varied object sizes]
+      no_fabricated_annotations: true
+    per_class: {}                          # filled once Stages 3-4 gaps are known
+    downloaded_images: 0
+    annotation_status: pending
+    conversion_status: pending
+    validation_status: pending
+    notes: Cannot be automated — final gap list reported to user after Stage 4.
 
-# ============================================================
-# SECTION 6: DOWNLOAD COMMANDS (DO NOT EXECUTE YET)
-# ============================================================
+# ---------------------------------------------------------------------------
+# TARGET DATASET
+# ---------------------------------------------------------------------------
+target:
+  root: "D:/HaloVisionData/datasets/halovision_v2"
+  layout:
+    images: {train: images/train, val: images/val, test: images/test}
+    labels: {train: labels/train, val: labels/val, test: labels/test}
+  yaml: "D:/HaloVisionData/datasets/halovision_v2/halovision_v2.yaml"
+  yaml_mirror_in_repo: "ml/training/datasets/halovision_v2/halovision_v2.yaml"
+  nc: 95
+  split_policy:
+    coco_train_pool: "118,287 train2017 images"
+    coco_val_pool: "5,000 val2017 images -> 100% becomes val/ (standard COCO val retained for old-vs-new comparison)"
+    coco_test_carve: "deterministic 5% of train2017 -> test/ (never trained on)"
+    new_class_split: "deterministic 70/15/15 train/val/test by content-hash ordering, per source"
+    leakage_control: "MD5 dedup across all splits; near-duplicate guard via source id + hash"
+  status: validated_ready_for_training
+  final_counts_2026-09-26:
+    images: {train: 143358, val: 11634, test: 12663, total: 167655}
+    label_files: {train: 143358, val: 11634, test: 12663, total: 167655}
+    annotations_total: 955224
+    annotations_per_split: {train: 855185, val: 46494, test: 53545}
+    background_empty_labels: 1069         # valid COCO backgrounds, no objects
+    image_sources: {coco2017: 123273, extracted_folders: 29034, huggingface: 4274, open_images: 1872, roboflow_supplemental: 9202}
+    classes_with_data: 89                 # of 95; gap classes: [81, 83, 89, 91, 92, 93]
+    custom_class_instances:
+      "80": 2545    # wheelchair
+      "82": 3218    # crutches
+      "84": 13047   # crosswalk
+      "85": 1666    # curb
+      "86": 10757   # pothole
+      "87": 3580    # stairs
+      "88": 7103    # escalator
+      "90": 11779   # door
+      "94": 1516    # road_barrier (ROD barrel+cone)
+  validation:
+    status: PASSED
+    date: "2026-09-26"
+    script: "ml/training/validate_dataset.py (exit 0)"
+    report: "D:/HaloVisionData/runs/validation/dataset_validation_report.json"
+    criticals: "0/10 keys (missing, corrupt, invalid-class, zero-area, format, duplicates, leakage, nc-mismatch, empty)"
+    quarantine_actions: "1079 duplicate pairs -> cache/dedup_quarantine; 25 all-invalid zero-area pairs -> cache/zero_area_quarantine (both reversible)"
 
-# Step 1: Download COCO 2017 for baseline preservation
-# This is REQUIRED to prevent catastrophic forgetting
-coco_download:
-  command: |
-    # Download COCO 2017 train/val from official source
-    # http://images.cocodataset.org/zips/train2017.zip (18GB)
-    # http://images.cocodataset.org/zips/val2017.zip (1GB)
-    # http://images.cocodataset.org/annotations/annotations_trainval2017.zip (241MB)
-  notes: "Required for baseline preservation. ~19GB total."
+# ---------------------------------------------------------------------------
+# PIPELINE SCRIPTS (rewritten for restart; all read HALOVISION_DATA_DIR)
+# ---------------------------------------------------------------------------
+pipeline:
+  audit: done                              # Stage 0, 2026-09-24
+  manifest: done                           # Stage 1, this file
+  discover_open_images: "ml/training/discover_open_images.py"     # Stage 3 verify+filter
+  download_open_images: "ml/training/download_open_images.py"     # Stage 3 subset download
+  download_roboflow: "ml/training/download_roboflow.py"           # Stage 4 (gap-driven)
+  convert_coco: "ml/training/convert_coco.py"                     # Stage 2/6
+  convert_new_classes: "ml/training/convert_new_classes.py"       # Stage 6
+  validate: "ml/training/validate_dataset.py"                     # Stage 7
+  train: "ml/training/train_halovision.py"                        # Stage 8/9
+  evaluate: "ml/training/evaluate_models.py"                      # Stage 10/11
+  paths: "ml/training/hv_paths.py"                                # shared HALOVISION_DATA_DIR resolution
 
-# Step 2: Download Open Images V7 filtered classes
-open_images_download:
-  method: "Ultralytics fiftyone script (filtered to our 4 classes only)"
-  command: |
-    # Use fiftyone to download only the classes we need
-    # This avoids downloading the full 561GB dataset
-    python -c "
-    import fiftyone as fo
-    import fiftyone.zoo as foz
-    dataset = foz.load_zoo_dataset(
-        'open-images-v7',
-        split='train',
-        label_types=['detections'],
-        classes=['Wheelchair', 'Crutch', 'Stairs', 'Door'],
-        max_samples=2000,
-    )
-    dataset.export(
-        export_dir='ml/training/datasets/halovision_v2/open_images',
-        dataset_type=fo.types.YOLOv5Dataset,
-        label_field='ground_truth',
-        classes=['Wheelchair', 'Crutch', 'Stairs', 'Door'],
-    )
-    "
-  notes: "Filtered download. ~50GB estimated for 4 classes."
-
-# Step 3: Download Roboflow datasets
-roboflow_download:
-  datasets:
-    - url: "https://universe.roboflow.com/mobilityaids/wheelchair-detection-hh3io"
-      format: "YOLOv8"
-    - url: "https://universe.roboflow.com/nodongjaeteam-g1pbo/white-cane-hyjat"
-      format: "YOLOv8"
-    - url: "https://universe.roboflow.com/mbdetector/mobility-aid-detector-mwxuw"
-      format: "YOLOv8"
-    - url: "https://universe.roboflow.com/esera/bollards-crosswalk-stairs"
-      format: "YOLOv8"
-    - url: "https://universe.roboflow.com/aegis/pothole-detection-i00zy"
-      format: "YOLOv8"
-    - url: "https://universe.roboflow.com/fpn/ood-pbnro"
-      format: "YOLOv8"
-    - url: "https://universe.roboflow.com/mallescalatorsystem"
-      format: "YOLOv8"
-  notes: "Download each, filter to needed classes, convert to our class IDs."
-
-# Step 4: Custom phone-camera capture
-custom_capture:
-  classes: ["guide_dog", "entrance", "exit", "road_barrier", "curb"]
-  min_per_class: 50
-  target_per_class: 300
-  tool: "LabelImg or CVAT"
-  format: "YOLO txt (class_id cx cy w h)"
-
-# ============================================================
-# SECTION 7: CLASS ID RENAMING REQUIRED
-# ============================================================
-
-renaming_required:
-  - current_id: 81
-    current_name: "walking_cane"
-    new_name: "white_cane"
-    reason: "Matches available dataset terminology"
-
-  - current_id: 87
-    current_name: "staircase"
-    new_name: "stairs"
-    reason: "Matches Open Images V7 terminology"
-
-# ============================================================
-# SECTION 8: LICENSE CONCERNS
-# ============================================================
-
-license_concerns:
-  - source: "COCO 2017"
-    license: "CC BY 4.0 (images), COCO Terms of Use"
-    concern: "Must comply with COCO terms. Images are CC BY 4.0."
-    action: "Include license attribution in dataset documentation"
-
-  - source: "Open Images V7"
-    license: "CC BY 4.0"
-    concern: "Google's dataset. CC BY 4.0 allows commercial use with attribution."
-    action: "Include Google Open Images attribution"
-
-  - source: "Roboflow Universe"
-    license: "Varies per dataset (typically CC BY 4.0)"
-    concern: "Must verify license for each downloaded dataset."
-    action: "Check license on each Roboflow dataset page before download"
-
-  - source: "Custom phone-camera"
-    license: "Internal use only"
-    concern: "No external license issues."
-    action: "None"
-
-# ============================================================
-# SECTION 9: TOTAL ESTIMATED IMAGES
-# ============================================================
-
-estimates:
-  coco_baseline: "~118K training images (for 80-class preservation)"
-  open_images_filtered: "~2000 per class × 4 classes = ~8000 images"
-  roboflow_supplemental: "~500-2000 per class × 11 classes = ~5500-22000 images"
-  custom_capture: "~300 per class × 5 classes = ~1500 images"
-  total_estimated: "~130K-150K images (including COCO baseline)"
-  total_new_class_images: "~15K-30K images (for 15 new classes)"
+# ---------------------------------------------------------------------------
+# ORIGINAL MODEL PROTECTION
+# ---------------------------------------------------------------------------
+model_protection:
+  original_models_untouched:
+    - "yolov8n.pt (project root)"
+    - "yolov8m.pt (project root)"
+    - "App/yolov8m.pt (production perception default)"
+    - "models/original/yolo26m_original.pt"
+    - "yolo26n.pt / yolo26s.pt / yolo26m.pt (pretrained bases, read-only)"
+  rule: "Training writes ONLY to D:/HaloVisionData/runs/training/ and D:/HaloVisionData/models/yolo26_halovision_v2/. No C: model file is ever written."
+  original_backup_location: "D:/HaloVisionData/models/original/  (copy of baseline for comparison, made at Stage 8)"

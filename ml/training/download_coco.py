@@ -16,7 +16,6 @@ import zipfile
 import json
 import time
 from pathlib import Path
-from hashlib import sha256
 
 # Use D: drive for large downloads
 DOWNLOAD_DIR = Path('D:/halovision_downloads/coco2017')

@@ -1,9 +1,6 @@
 """WebSocket integration tests."""
 import os
-import sys
 import pytest
-import asyncio
-import json
 
 # Set test environment BEFORE importing app modules
 os.environ["APP_ENV"] = "development"
@@ -15,8 +12,7 @@ os.environ["ADMIN_PASSWORD"] = "TestPassword123!"
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 from App.main import app
-from App.api.database import SessionLocal, engine, Base
-from App.api import models, auth
+from App.api.database import engine, Base
 
 
 @pytest.fixture(autouse=True)

@@ -1,6 +1,5 @@
 """API integration tests using FastAPI TestClient."""
 import os
-import sys
 import pytest
 
 # Set test environment BEFORE importing app modules
@@ -13,9 +12,9 @@ os.environ["ADMIN_PASSWORD"] = "TestPassword123!"
 from fastapi.testclient import TestClient
 
 # Import the app - this will initialize the database
-from App.main import app, get_db
+from App.main import app
 from App.api.database import SessionLocal, engine, Base
-from App.api import models, auth
+from App.api import models
 
 
 @pytest.fixture(autouse=True)

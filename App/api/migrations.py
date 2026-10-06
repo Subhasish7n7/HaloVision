@@ -36,7 +36,7 @@ import os
 
 from sqlalchemy import text
 
-from App.api.database import Base, engine
+from App.api.database import engine
 from App.api import models
 
 logger = logging.getLogger(__name__)

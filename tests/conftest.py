@@ -1,5 +1,4 @@
 import os
-import sys
 
 # Ensure APP_ENV is set for tests (not production, so defaults work)
 os.environ.setdefault("APP_ENV", "development")

@@ -1,8 +1,5 @@
 """Unit tests for perception pipeline — IoU, DIoU, deduplication."""
 import os
-import sys
-import numpy as np
-import pytest
 
 # Set test environment
 os.environ.setdefault("APP_ENV", "development")

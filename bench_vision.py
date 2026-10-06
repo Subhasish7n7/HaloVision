@@ -4,7 +4,6 @@ Measures detection (YOLO track) and depth (MiDaS torch) latency on a sample
 frame and prints a before/after comparison table. Run from the project root:
     .venv\\Scripts\\python.exe bench_vision.py
 """
-import sys
 import time
 
 import cv2

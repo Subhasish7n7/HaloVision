@@ -1,261 +1,134 @@
-# HaloVision v2 Dataset Acquisition Plan
+# HaloVision YOLO26 Dataset Plan — v2 (RESTART)
 
-**Generated:** 2026-09-23  
-**Status:** PLANNING — No downloads yet  
-**Goal:** Train YOLO26s with 95 classes (80 COCO + 15 HaloVision)
-
----
-
-## Executive Summary
-
-This plan documents the dataset acquisition strategy for HaloVision v2. The existing 80 COCO classes are confirmed to match the model's class mapping. 15 new HaloVision accessibility classes are proposed (IDs 80-94). After auditing Open Images V7 and Roboflow Universe, we found:
-
-- **4 classes** available directly from Open Images V7
-- **8 classes** available from Roboflow Universe (supplemental)
-- **5 classes** require custom phone-camera capture
-
-**Two class names must be renamed** to match available dataset terminology.
+> **Status: 2026-09-24 — Workflow restarted from the beginning.**
+> Stage 0 audit completed. Previous acquisition run was partially complete and is
+> superseded where noted below. Machine-readable tracking lives in
+> `dataset_manifest.yaml` (Stage 1). Storage moved to **D:\HaloVisionData**
+> (`HALOVISION_DATA_DIR`); the C: project keeps only code/config/small metadata.
 
 ---
 
-## Confirmed COCO Class Mapping
+## 0. Stage 0 Audit Results (2026-09-24)
 
-**Source:** `yolo26m.pt` (Ultralytics 8.4.158)  
-**Verification:** All 80 COCO classes (IDs 0-79) match `halovision_v2.yaml` exactly.  
-**No changes required to existing class IDs.**
+| Item | Finding | Action |
+|---|---|---|
+| COCO 2017 zips | **COMPLETE & VERIFIED** in `D:\HaloVisionData\downloads\coco\` (moved from `D:\halovision_downloads\`): train2017.zip 19,336,861,798 B (118,288 entries), val2017.zip 815,585,330 B (5,001 entries), annotations_trainval2017.zip 252,907,541 B (6 entries). Zip central-directory integrity PASS. | **Do not redownload.** |
+| COCO extraction | train2017: 118,287 files, val2017: 5,000 files, annotations: 6 files — was on C:, **moved to `D:\HaloVisionData\datasets\coco2017\`**. | Reuse as conversion source. |
+| Previous partial conversion | C: `ml/training/datasets/halovision_v2/` had 94,475 train images / 94,474 labels (1 image missing label), **0 val, 0 test**. Sampled 30,000 labels: 0 malformed, class IDs only 0–79 (mapping correct), ~0.9% empty background labels (normal for COCO). | **Superseded** — clean rebuild on D: with proper train/val/test splits. C: copy retained until rebuilt dataset validates, then removed (derived data, reproducible). |
+| Class mapping 0–79 | `halovision_v2.yaml` names match standard COCO→YOLO order exactly; verified against `instances_train2017.json` (80 categories, sparse IDs 1–90, sorted-index mapping). **No discrepancy found.** | Mapping FROZEN as approved. |
+| Open Images | Nothing downloaded. | Stage 3 (targeted subset only). |
+| Roboflow | Nothing downloaded. | Stage 4, gap-driven only; export needs API key. |
+| Custom data | Nothing collected. | Stage 5 structure + report gaps. |
+| Previous training runs | **None** (`runs/`, `ml/training/runs/` absent). | — |
+| Model files | `yolov8n.pt`, `yolov8m.pt`, `App/yolov8m.pt`, `yolo26n/s/m.pt`, `models/original/yolo26m_original.pt` all present. `models/yolo26_halovision_v2/` contains only `training_config.json` — **no trained checkpoint exists yet** (`active_model.json` points at nonexistent `best.pt`). | Originals protected; new model → D:. |
+| Training scripts | Hardcoded `os.chdir(r'C:\Users\wwwas\...')` + `D:/halovision_downloads`; `validate_dataset.py` NameError (`line_id`); `train_halovision.py` typo `metrics/mAP50-50(B)`; empty-label policy conflict between converter and validator. | Rewritten for this restart (Stage 8). |
+| Toolchain | `.venv` is empty. Working interpreter: **`C:\Python314\python.exe`** (Python 3.14.3, ultralytics **8.4.24**, torch 2.11.0). GPU present: **RTX 3060 6GB** (CUDA 12.8 driver) but torch was CPU-only → CUDA wheel install in progress. | Use Python314; CUDA torch for training. |
+| Disk space | C: 62.6 GB free, **D: 103.4 GB free**, RAM 16 GB, CPU 8c/16t. | D: budget below. |
 
----
+### Disk budget (before any new download)
 
-## Proposed New Classes (IDs 80-94)
+| Stage | Estimate | Fits D: (103.4 GB free)? |
+|---|---|---|
+| COCO move (done) | 0 net (relocated) | ✔ |
+| COCO → halovision_v2 conversion (images copied once) | +19.4 GB | ✔ |
+| Open Images CSVs | ~2.1 GB | ✔ |
+| Open Images subset images | 1–4 GB | ✔ |
+| Roboflow (if needed) | 1–4 GB | ✔ |
+| Final halovision_v2 dataset | ~22–26 GB | ✔ |
+| Training runs (checkpoints, yolo26s) | ~3–6 GB | ✔ |
+| Trained models | <0.5 GB | ✔ |
+| **Peak total** | **~55 GB** | ✔ ~48 GB headroom |
+| Cleanup after validation (archives + C: partial) | −20 GB archives, −15 GB C: | ✔ |
 
-| ID | Current Name | Status | Action Required |
-|----|--------------|--------|-----------------|
-| 80 | wheelchair | ✅ Available | None |
-| 81 | walking_cane | ⚠️ Rename | Rename to `white_cane` |
-| 82 | crutches | ✅ Available | None |
-| 83 | guide_dog | ❌ Custom | Custom capture required |
-| 84 | crosswalk | ✅ Available | None |
-| 85 | curb | ⚠️ Partial | Roboflow + custom recommended |
-| 86 | pothole | ✅ Available | None |
-| 87 | staircase | ⚠️ Rename | Rename to `stairs` |
-| 88 | escalator | ⚠️ Partial | Roboflow + custom recommended |
-| 89 | elevator | ⚠️ Partial | Roboflow + custom recommended |
-| 90 | door | ✅ Available | None |
-| 91 | entrance | ❌ Custom | Custom capture required |
-| 92 | exit | ❌ Custom | Custom capture required |
-| 93 | bollard | ⚠️ Partial | Roboflow + custom recommended |
-| 94 | road_barrier | ❌ Custom | Custom capture required |
-
----
-
-## Class Ambiguity Definitions
-
-These definitions resolve potential confusion between similar classes:
-
-### staircase → stairs (RENAMED)
-- **Definition:** A flight of steps connecting different floor levels
-- **Open Images V7:** Class 489 "Stairs"
-- **Action:** Rename to `stairs` for consistency
-
-### walking_cane → white_cane (RENAMED)
-- **Definition:** A white cane used by visually impaired persons for navigation
-- **Roboflow:** Multiple "white_cane" datasets available
-- **Action:** Rename to `white_cane` to match dataset terminology
-
-### guide_dog vs dog
-- **guide_dog:** A dog wearing a harness, vest, or leading a visually impaired person
-- **dog (Coco 16):** Any dog without harness/vest
-- **Distinction:** Guide dogs have visible harness/vest equipment
-
-### door vs entrance
-- **door:** The physical door panel, gate, or entryway structure itself
-- **entrance:** An entrance marked by signage, archway, or architectural features indicating entry point
-- **Distinction:** Door is the object; entrance is the location/feature
-
-### entrance vs exit
-- **entrance:** Marked by entry signage, archway, or architectural cues
-- **exit:** Marked by EXIT signage, emergency exit features, or architectural cues
-- **Distinction:** Signage and context determine classification
-
-### crosswalk vs road
-- **crosswalk:** Painted zebra stripes or crosswalk markings on road surface
-- **road:** The general road surface (not annotated)
-- **Distinction:** Only painted markings are crosswalk
-
-### bollard vs road_barrier
-- **bollard:** Short, sturdy vertical post (metal/concrete) for traffic control
-- **road_barrier:** Larger horizontal barrier (jersey barrier, guardrail, construction barrier)
-- **Distinction:** Size and orientation (vertical vs horizontal)
-
-### curb vs road edge
-- **curb:** Raised edge between road and sidewalk/pavement
-- **road edge:** The boundary line (not annotated as separate class)
-- **Distinction:** Curb is the physical raised structure
+Nothing large is ever written to C:.
 
 ---
 
-## Open Images V7 Availability
+## 1. Goal
 
-| Class | OID ID | OID Name | Available |
-|-------|--------|----------|-----------|
-| wheelchair | 583 | Wheelchair | ✅ Yes |
-| crutches | 145 | Crutch | ✅ Yes |
-| stairs | 489 | Stairs | ✅ Yes |
-| door | 164 | Door | ✅ Yes |
+YOLO26 model with **95 classes**:
+- IDs **0–79**: original COCO classes, preserved exactly (baseline capability retained).
+- IDs **80–94**: HaloVision accessibility classes (approved mapping, frozen).
 
-**Download method:** Ultralytics fiftyone script (filtered to 4 classes only)  
-**License:** CC BY 4.0  
-**Estimated images:** 500-2000 per class (filtered)
+Trained via transfer learning from `yolo26s.pt`. Output: `D:\HaloVisionData\models\yolo26_halovision_v2\{best.pt,last.pt,data.yaml,metadata.json,results.csv}`.
+**Original YOLOv8 model is never modified.** Rollback: `App/yolov8m.pt` (+ copy staged to `D:\HaloVisionData\models\original\`).
 
----
+## 2. Class definitions (annotation contract)
 
-## Roboflow Universe Availability
+| ID | Name | Definition / labeling rule |
+|---|---|---|
+| 80 | wheelchair | A wheelchair (occupied or empty). |
+| 81 | white_cane | **Only** mobility canes used by blind/low-vision people. Never sticks, umbrellas, poles, hiking poles. |
+| 82 | crutches | Pair or single crutch in use or standing. |
+| 83 | guide_dog | Dog with harness/vest indicating guide role. Pet dogs = class 16 `dog`. |
+| 84 | crosswalk | Painted pedestrian crossing on roadway. |
+| 85 | curb | Raised kerb/curb separating road from pavement. |
+| 86 | pothole | Damaged road surface hole/depression. |
+| 87 | stairs | **Fixed flight of steps** (whole flight). Separate from escalator (88). Not a single step, ladder, or ramp. |
+| 88 | escalator | Moving staircase. |
+| 89 | elevator | Elevator car/doors-as-elevator (lift). |
+| 90 | door | Physical door panel/leaf. |
+| 91 | entrance | Entrance opening/passage into a structure (may include open doorways). |
+| 92 | exit | Egress opening or EXIT-sign-marked doorway. |
+| 93 | bollard | Short free-standing vertical post controlling traffic. |
+| 94 | road_barrier | Horizontal/temporary road barrier, guard rail, gate arm. Not a bollard. |
 
-| Class | Dataset | Images | License |
-|-------|---------|--------|---------|
-| wheelchair | MobilityAids/wheelchair-detection-hh3io | 9,210 | CC BY 4.0 |
-| white_cane | nodongjaeteam-g1pbo/white-cane-hyjat | 9,500 | CC BY 4.0 |
-| crutches | mbdetector/mobility-aid-detector-mwxuw | 9,200 | CC BY 4.0 |
-| crosswalk | esera/bollards-crosswalk-stairs | Unknown | CC BY 4.0 |
-| curb | fpn/ood-pbnro | 10,000 | CC BY 4.0 |
-| pothole | aegis/pothole-detection-i00zy | 1,482 | CC BY 4.0 |
-| stairs | esera/bollards-crosswalk-stairs | Unknown | CC BY 4.0 |
-| escalator | mallescalatorsystem | Unknown | CC BY 4.0 |
-| elevator | detection-kgttv/wheelchair-7fzdq | Unknown | CC BY 4.0 |
-| door | vision-impaired-assistance/vision-impaired-assistance | 17,073 | CC BY 4.0 |
-| bollard | esera/bollards-crosswalk-stairs | Unknown | CC BY 4.0 |
+Renames from old plan applied: `walking_cane → white_cane`, `staircase → stairs`.
 
-**Download method:** Roboflow API or manual download  
-**License:** CC BY 4.0 (verify per dataset)  
-**Note:** Each dataset must be filtered to only the classes we need.
+## 3. Sources & licensing
 
----
+| Source | Classes covered | License | Method | Status (2026-09-26) |
+|---|---|---|---|---|
+| **COCO 2017** (verified, on D:) | baseline 0–79 | COCO Terms of Use; annotations CC BY 4.0 | Already downloaded+extracted; converted with train/val/test splits | **Converted**: 112,304 train / 5,000 val / 5,983 test; 886,282 annos |
+| **Open Images V7** (Stage 3) | wheelchair(80), crutches(82), stairs(87), door(90) — only these 4 exist as boxable classes (all 601 names scanned) | Images CC BY 4.0; annotations CC BY 4.0 | CSV-filter by LabelName → S3-mirror image download (image-URL CSVs are 403; v5 bbox object 403 → used v6 object) | **Downloaded + converted**: 1,872 subset images |
+| **CDSet-3434 crosswalk** (Stage 4) | crosswalk(84) | Apache-2.0 | HF mirror of Zenodo DOI 10.5281/zenodo.8289874; guide-arrow class unmapped→skipped | **Converted**: 2,923 imgs (train 2,096 / val 413 / test 414) |
+| **RDD2022-derived road damage** (Stage 4) | pothole(86) via class D40 | CC BY-SA 4.0 | HF mirror of CRDDC 2022 derivative; crack classes D00/D10/D20 unmapped→skipped | **Converted**: 6,279 imgs (train 4,344 / val 962 / test 973) |
+| **ROD Obstacle-Detection** (Stage 4, HF) | stairs(87), crosswalk(84), road_barrier(94) via local 4/14/18/20 | **MIT** (rev pinned `add28c7f…`; cite `zandi2026rod`) | Selective download of target-class splits; **guard rail(13) excluded** (~33% label noise) | **Converted + deduped** (2026-09-26): 4,158 imgs, 0 missing labels |
+| **AssistEye Unified Obstacles** (Stage 4, HF) | pothole(86) via local 3 | **MIT** (rev pinned `319fa39f…`) | Full download; **pole(7) rejected** (verification failed: 58% streetlights) | **Converted + deduped** (2026-09-26): 292 imgs |
+| **Rejected**: miia-pothole (classification-only), Nielbagz/Bollard (empty repo), GuideDog (VQA CC-BY-NC), keremberke/pothole (90 imgs, masks), ROD Guard rail (label noise), AssistEye pole (wrong objects) | — | — | — | Rejected: license/quality reasons recorded in manifest |
+| **Custom phone captures** (Stage 5) | final gaps: white_cane, guide_dog, elevator, entrance, exit, bollard | Project-owned | Manual; ≥50 images/gap class; structure created | **Structure created** (15 class dirs + guides); needs manual capture |
 
-## Custom Phone-Camera Capture Required
+No account/API-key source was required — Roboflow Universe exports were avoided in favor of account-free HF mirrors with explicit licenses.
 
-| Class | Reason | Min Images | Target |
-|-------|--------|------------|--------|
-| guide_dog | No public dataset; must distinguish from ordinary dogs | 50 | 300 |
-| entrance | No public dataset; context-dependent architectural feature | 50 | 300 |
-| exit | No public dataset; must show EXIT signage | 50 | 300 |
-| road_barrier | No public dataset; various barrier types | 50 | 300 |
-| curb | OOD dataset exists but custom images recommended for diversity | 50 | 300 |
+Classes with no faithful external equivalent are **not force-labeled** — they go to Stage 5.
 
-**Capture requirements:**
-- Device: Mobile phone camera
-- Conditions: Indoor/outdoor, day/night, various angles/distances
-- Annotations: LabelImg or CVAT in YOLO format
-- Format: `class_id cx cy w h` (normalized)
-
----
-
-## Dataset Structure
+## 4. Target layout (D:)
 
 ```
-ml/training/datasets/halovision_v2/
-├── halovision_v2.yaml          # 95-class config
-├── DATASET_PLAN.md             # This file
-├── dataset_manifest.yaml       # Detailed acquisition manifest
-├── images/
-│   ├── train/                  # Training images
-│   ├── val/                    # Validation images
-│   └── test/                   # Test images
-├── labels/
-│   ├── train/                  # Training labels (YOLO format)
-│   ├── val/                    # Validation labels
-│   └── test/                   # Test labels
-└── sources/
-    ├── coco2017/               # COCO baseline data
-    ├── open_images/            # Open Images V7 filtered
-    ├── roboflow/               # Roboflow supplemental data
-    └── custom/                 # Custom phone-camera data
+D:\HaloVisionData\datasets\halovision_v2\
+    images\{train,val,test}\      labels\{train,val,test}\
+    halovision_v2.yaml            sources\<per-source provenance>\
 ```
 
----
+- **val/** = full COCO val2017 (5,000) + new-class val splits → preserves standard COCO comparison basis (Stage 11).
+- **test/** = deterministic 5% carve of COCO train2017 + 15% of each new-class source.
+- **train/** = remaining COCO train2017 + 70% of each new-class source.
+- Leakage control: MD5 dedup across splits; same-source id uniqueness; deterministic seeding.
+- Empty (background) labels are **valid** for COCO images with no instances — validator treats "image with no label file" as error, "empty label file" as OK (policy conflict from old scripts resolved).
 
-## Download Sequence
+## 5. Pipeline stages (automation order)
 
-### Phase 1: COCO 2017 (Baseline Preservation)
-**Purpose:** Prevent catastrophic forgetting of 80 existing classes  
-**Download:** ~19GB (train + val + annotations)  
-**Source:** http://images.cocodataset.org/
+1. ~~AUDIT~~ ✔ 2026-09-24
+2. ~~MANIFEST~~ ✔ `dataset_manifest.yaml` + this file
+3. ~~COCO~~ ✔ zips verified; moved to D:; converted (112,304/5,000/5,983)
+4. ~~OPEN IMAGES~~ ✔ class verification (4 matched/11 absent) + 1,872 subset images
+5. ~~ROBOFLOW/SUPPLEMENTAL~~ ✔ CDSet-3434 + RDD2022 + ROD + AssistEye (account-free HF mirrors, MIT/Apache/CC-BY-SA; pinned revisions)
+6. ~~CUSTOM STRUCTURE~~ ✔ 15 class dirs created; 6 gap classes await manual capture (81/83/89/91/92/93)
+7. ~~CONVERSION~~ ✔ final rerun 2026-09-26 (HF ingest active) + dedup applied (1,079 pairs quarantined)
+8. ~~VALIDATION~~ ✔ **PASSED 2026-09-26** — `validate_dataset.py` exit 0, 0/10 critical keys (report JSON: `runs\validation\dataset_validation_report.json`); 167,655 imgs / 955,224 anns; gaps [81, 83, 89, 91, 92, 93]
+9. **TRAINING PREP** — `train_halovision.py` (YOLO26, D: paths, config/metadata/results capture; originals untouched)
+10. **TRAIN** — `train_halovision.py` (2-phase transfer from yolo26n) → versioned output on D: — **MANUAL: user runs this command**
+11. **EVALUATION** — new model: COCO 0–79, new 80–94, P/R/mAP, per-class, speed
+12. **COMPARISON** — same val set: original `yolov8m.pt` vs new `best.pt`; report measured deltas incl. COCO degradation check
+13. **INTEGRATION CHECK** — load model in `PerceptionSystem` context, verify output shape/classes/tracking/depth/EventBus compatibility (no architecture changes)
+14. **VERSIONING/ROLLBACK** — `models/yolo26_halovision_v2/metadata.json`, update `active_model.json` **only if integration passes**; rollback = original YOLOv8
+15. **FINAL VERIFICATION** — pytest suite + model-load/inference/track-ID smoke tests + original-file checksum proof
 
-### Phase 2: Open Images V7 (Filtered)
-**Purpose:** 4 classes with direct OID matches  
-**Download:** ~50GB estimated (filtered to 4 classes)  
-**Method:** Ultralytics fiftyone script
+## 6. Rules of engagement
 
-### Phase 3: Roboflow Universe
-**Purpose:** 8 classes with supplemental data  
-**Download:** Variable (filter to needed classes)  
-**Method:** Roboflow API or manual download
-
-### Phase 4: Custom Capture
-**Purpose:** 5 classes with no public datasets  
-**Download:** N/A (capture manually)  
-**Method:** Phone camera + LabelImg/CVAT
-
----
-
-## License Compliance
-
-| Source | License | Attribution Required |
-|--------|---------|---------------------|
-| COCO 2017 | CC BY 4.0 | Yes |
-| Open Images V7 | CC BY 4.0 | Yes (Google) |
-| Roboflow Universe | CC BY 4.0 (varies) | Yes (per dataset) |
-| Custom capture | Internal | No |
-
-**Required attributions:**
-- COCO: "Contains images from MS COCO dataset, licensed under CC BY 4.0"
-- Open Images: "Contains images from Google Open Images V7, licensed under CC BY 4.0"
-- Roboflow: "Contains data from Roboflow Universe, licensed under CC BY 4.0"
-
----
-
-## Validation Checklist
-
-Before training, verify:
-- [ ] All images present in correct split directories
-- [ ] All labels present and matching image filenames
-- [ ] No corrupt images (JPEG/PNG header check)
-- [ ] No empty label files
-- [ ] All class IDs in valid range (0-94)
-- [ ] All bounding boxes normalized (0-1)
-- [ ] No zero-area bounding boxes
-- [ ] No train/val/test leakage
-- [ ] Class distribution acceptable (no rare classes <10 annotations)
-- [ ] No duplicate images across splits
-
-**Run validation:**
-```bash
-python ml/training/validate_dataset.py ml/training/datasets/halovision_v2/halovision_v2.yaml
-```
-
----
-
-## Next Steps
-
-1. **Verify dataset_manifest.yaml** — Review all class definitions and acquisition sources
-2. **Confirm class renames** — Approve `walking_cane` → `white_cane` and `staircase` → `stairs`
-3. **Begin Phase 1** — Download COCO 2017 baseline
-4. **Begin Phase 2** — Download Open Images V7 filtered classes
-5. **Begin Phase 3** — Download Roboflow supplemental datasets
-6. **Begin Phase 4** — Custom phone-camera capture for 5 classes
-7. **Validate dataset** — Run validation script
-8. **Proceed to training** — Once validation passes
-
----
-
-## Files Created
-
-| File | Purpose |
-|------|---------|
-| `ml/training/datasets/halovision_v2/halovision_v2.yaml` | 95-class dataset config |
-| `ml/training/datasets/halovision_v2/DATASET_PLAN.md` | This acquisition plan |
-| `ml/training/dataset_manifest.yaml` | Detailed per-class acquisition manifest |
-| `ml/training/validate_dataset.py` | Dataset validation script |
-| `ml/training/train_halovision.py` | 2-phase training script |
-| `models/yolo26_halovision_v2/training_config.json` | Training hyperparameters |
-| `models/active_model.json` | Model switching config |
-| `App/Perception/model_manager.py` | Model loading/switching/rollback |
+- No stage declared complete without executed + verified evidence.
+- No silent class-ID changes; mapping frozen in `dataset_manifest.yaml`.
+- No validation-before-training skip; validator never weakened to hide errors.
+- Original YOLOv8/`App/yolov8m.pt` never overwritten (checksum-verified at end).
+- Every large download reports: size estimate, D: free space, partial state, subset strategy first.
+- Blocking stops only for: external account/login, manual image capture, destructive actions, license acceptance, unforeseen genuinely-blocking decisions.

@@ -68,13 +68,34 @@ class ObjectTracker:
     even when they're briefly occluded.
     """
 
-    def __init__(self, model_name="yolo26m.pt", imgsz=480):
+    def __init__(self, model_name=None, imgsz=480):
         # Auto-detect GPU (CUDA) or fall back to CPU
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if model_name is None:
+            model_name = self._default_model()
+            print(f"[tracker] using model weights: {model_name}")
         # Load the YOLOv8 model — this loads weights into memory once
         self.model = YOLO(model_name)
         self.tracker_yaml = _TRACKER_YAML
         self.imgsz = imgsz  # Input image size for YOLO (smaller = faster)
+
+    @staticmethod
+    def _default_model():
+        """Pick weights without breaking startup, in priority order:
+        env HALOVISION_MODEL > trained HaloVision V2 best.pt (once it exists)
+        > yolo26n.pt (spec default) > yolo26m.pt (legacy fallback)."""
+        env = os.environ.get("HALOVISION_MODEL")
+        if env:
+            return env
+        data_dir = os.environ.get("HALOVISION_DATA_DIR", "D:/HaloVisionData")
+        best = os.path.join(data_dir, "models", "yolo26_halovision_v2", "best.pt")
+        if os.path.exists(best):
+            return best
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        nano = os.path.join(root, "yolo26n.pt")
+        if os.path.exists(nano):
+            return nano
+        return "yolo26m.pt"
 
     def track(self, frame, conf=0.45):
         """Run detection + tracking on a single frame.

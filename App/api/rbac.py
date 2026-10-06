@@ -21,7 +21,7 @@
 
 """Role-based access control for the HaloVision admin system."""
 
-from typing import List, Optional
+from typing import Optional
 
 # Role constants
 ROLE_SUPER_ADMIN = "super_admin"

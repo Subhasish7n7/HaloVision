@@ -5,7 +5,8 @@ sqlalchemy==2.0.35
 psycopg2-binary==2.9.9
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-ultralytics==8.2.0
+bcrypt==4.0.1  # passlib 1.7.4 crashes with bcrypt>=4.1 (removed __about__)
+ultralytics==8.4.158
 torch>=2.0.0
 edge-tts>=7.2.0
 numpy==1.26.4
